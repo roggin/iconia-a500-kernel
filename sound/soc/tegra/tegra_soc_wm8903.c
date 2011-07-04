@@ -17,6 +17,7 @@
 
 #include "tegra_soc.h"
 #include "../codecs/wm8903.h"
+#include "tegra_wired_jack.h"
 
 static struct platform_device *tegra_snd_device;
 
@@ -101,6 +102,7 @@ static int tegra_hifi_hw_params(struct snd_pcm_substream *substream,
 	if (substream->stream != SNDRV_PCM_STREAM_PLAYBACK) {
 		snd_soc_write(codec, WM8903_ANALOGUE_LEFT_INPUT_0, 0X7);
 		snd_soc_write(codec, WM8903_ANALOGUE_RIGHT_INPUT_0, 0X7);
+
 		// Mic Bias enable
 		CtrlReg = (0x1<<B00_MICBIAS_ENA) | (0x1<<B01_MICDET_ENA);
 		snd_soc_write(codec, WM8903_MIC_BIAS_CONTROL_0, CtrlReg);
@@ -109,10 +111,17 @@ static int tegra_hifi_hw_params(struct snd_pcm_substream *substream,
 		CtrlReg |= (1<<B15_DRC_ENA);
 		snd_soc_write(codec, WM8903_DRC_0, CtrlReg);
 		// Single Ended Mic
-		CtrlReg = (0x0<<B06_IN_CM_ENA) |
-			(0x0<<B00_MODE) | (0x0<<B04_IP_SEL_N)
-					| (0x1<<B02_IP_SEL_P);
+		if (wired_jack_state() == 1) {
+			CtrlReg = (0x0<<B06_IN_CM_ENA) |
+				(0x0<<B00_MODE) | (0x1<<B04_IP_SEL_N)
+				| (0x1<<B02_IP_SEL_P);
+		} else {
+			CtrlReg = (0x0<<B06_IN_CM_ENA) |
+				(0x0<<B00_MODE) | (0x0<<B04_IP_SEL_N)
+				| (0x1<<B02_IP_SEL_P);
+		}
 		VolumeCtrlReg = (0x1C << B00_IN_VOL);
+		VolumeCtrlReg = (0x10 << B00_IN_VOL); //ddebug
 		// Mic Setting
 		snd_soc_write(codec, WM8903_ANALOGUE_LEFT_INPUT_1, CtrlReg);
 		snd_soc_write(codec, WM8903_ANALOGUE_RIGHT_INPUT_1, CtrlReg);
@@ -139,16 +148,21 @@ static int tegra_hifi_hw_params(struct snd_pcm_substream *substream,
 		CtrlReg = snd_soc_read(codec, WM8903_POWER_MANAGEMENT_6);
 		CtrlReg |= (0x1<<B00_ADCR_ENA)|(0x1<<B01_ADCL_ENA);
 		snd_soc_write(codec, WM8903_POWER_MANAGEMENT_6, CtrlReg);
-		// Enable Sidetone
-		SidetoneCtrlReg = (0x1<<2) | (0x2<<0);
-		SideToneAtenuation = 12 ; // sidetone 0 db
-		SidetoneCtrlReg |= (SideToneAtenuation<<8)
-				| (SideToneAtenuation<<4);
-		snd_soc_write(codec, R20_SIDETONE_CTRL, SidetoneCtrlReg);
+//ddebug 		// Enable Sidetone
+//ddebug 		SidetoneCtrlReg = (0x1<<2) | (0x2<<0);
+//ddebug 		SideToneAtenuation = 12 ; // sidetone 0 db
+//ddebug 		SidetoneCtrlReg |= (SideToneAtenuation<<8)
+//ddebug 				| (SideToneAtenuation<<4);
+//ddebug 		snd_soc_write(codec, R20_SIDETONE_CTRL, SidetoneCtrlReg);
 		CtrlReg = snd_soc_read(codec, R29_DRC_1);
 		CtrlReg |= 0x3; //mic volume 18 db
 		snd_soc_write(codec, R29_DRC_1, CtrlReg);
 	}
+
+	snd_soc_write(codec, WM8903_ANALOGUE_OUT1_LEFT, 0xB8);
+	snd_soc_write(codec, WM8903_ANALOGUE_OUT1_RIGHT, 0xB8);
+	snd_soc_write(codec, WM8903_ANALOGUE_OUT2_LEFT, 0xB7);
+	snd_soc_write(codec, WM8903_ANALOGUE_OUT2_RIGHT, 0xB7);
 
 	return 0;
 }

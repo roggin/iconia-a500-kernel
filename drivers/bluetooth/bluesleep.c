@@ -411,7 +411,7 @@ static void bluesleep_stop(void)
 	}
 	/* assert BT_WAKE */
 	if (bsi->has_ext_wake == 1)
-		gpio_set_value(bsi->ext_wake, 1);
+		gpio_set_value(bsi->ext_wake, 0);
 	set_bit(BT_EXT_WAKE, &flags);
 	del_timer(&tx_timer);
 	clear_bit(BT_PROTO, &flags);
@@ -631,7 +631,7 @@ static int __init bluesleep_probe(struct platform_device *pdev)
 			goto free_bt_host_wake;
 
 		/* configure ext_wake as output mode*/
-		ret = gpio_direction_output(bsi->ext_wake, 1);
+		ret = gpio_direction_output(bsi->ext_wake, 0);
 		if (ret < 0) {
 			pr_err("gpio-keys: failed to configure output"
 				" direction for GPIO %d, error %d\n",
@@ -771,7 +771,7 @@ static int __init bluesleep_init(void)
 
 	/* assert bt wake */
 	if (bsi->has_ext_wake == 1)
-		gpio_set_value(bsi->ext_wake, 1);
+		gpio_set_value(bsi->ext_wake, 0);
 	set_bit(BT_EXT_WAKE, &flags);
 	hci_register_notifier(&hci_event_nblock);
 

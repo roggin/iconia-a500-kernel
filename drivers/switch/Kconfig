@@ -13,3 +13,11 @@ config SWITCH_GPIO
 	  Say Y here to enable GPIO based switch support.
 
 endif # SWITCH
+
+config DOCK
+       tristate "Dock Swith support"
+       default n
+
+config ROTATELOCK
+       tristate "RotationLock Switch support"
+       default n

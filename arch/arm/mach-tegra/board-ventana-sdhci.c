@@ -33,6 +33,8 @@
 
 #define VENTANA_WLAN_PWR	TEGRA_GPIO_PK5
 #define VENTANA_WLAN_RST	TEGRA_GPIO_PK6
+#define PBJ20_WIFI_IRQ_GPIO	TEGRA_GPIO_PS0
+
 
 static void (*wifi_status_cb)(int card_present, void *dev_id);
 static void *wifi_status_cb_devid;
@@ -42,6 +44,36 @@ static struct clk *wifi_32k_clk;
 static int ventana_wifi_reset(int on);
 static int ventana_wifi_power(int on);
 static int ventana_wifi_set_carddetect(int val);
+
+
+#if defined(CONFIG_BCM4329_HW_OOB) || defined(CONFIG_BCM4329_OOB_INTR_ONLY)
+
+static struct resource ventana_wifi_wakeup_resources[] = {
+	{
+		.name   = "bcm4329_wlan_irq",
+		.start  = TEGRA_GPIO_TO_IRQ(PBJ20_WIFI_IRQ_GPIO),
+		.end    = TEGRA_GPIO_TO_IRQ(PBJ20_WIFI_IRQ_GPIO),
+		.flags  = IORESOURCE_IRQ | IORESOURCE_IRQ_HIGHLEVEL | IORESOURCE_IRQ_SHAREABLE,
+	},
+};
+
+static struct wifi_platform_data ventana_wifi_control = {
+	.set_power      = ventana_wifi_power,
+	.set_reset      = ventana_wifi_reset,
+	.set_carddetect = ventana_wifi_set_carddetect,
+};
+
+static struct platform_device ventana_wifi_device = {
+	.name           = "bcm4329_wlan",
+	.id             = 1,
+	.num_resources  = ARRAY_SIZE(ventana_wifi_wakeup_resources),
+	.resource       = ventana_wifi_wakeup_resources,
+	.dev            = {
+		.platform_data = &ventana_wifi_control,
+	},
+};
+
+#else
 
 static struct wifi_platform_data ventana_wifi_control = {
 	.set_power      = ventana_wifi_power,
@@ -56,6 +88,9 @@ static struct platform_device ventana_wifi_device = {
 		.platform_data = &ventana_wifi_control,
 	},
 };
+
+#endif
+
 
 static struct resource sdhci_resource0[] = {
 	[0] = {
@@ -120,10 +155,10 @@ static struct tegra_sdhci_platform_data tegra_sdhci_platform_data0 = {
 
 static struct tegra_sdhci_platform_data tegra_sdhci_platform_data2 = {
 	.clk_id = NULL,
-	.force_hs = 1,
+	.force_hs = 0,
 	.cd_gpio = TEGRA_GPIO_PI5,
-	.wp_gpio = TEGRA_GPIO_PH1,
-	.power_gpio = TEGRA_GPIO_PT3,
+	.wp_gpio = -1,
+	.power_gpio = TEGRA_GPIO_PI6,
 };
 
 static struct tegra_sdhci_platform_data tegra_sdhci_platform_data3 = {
@@ -131,7 +166,7 @@ static struct tegra_sdhci_platform_data tegra_sdhci_platform_data3 = {
 	.force_hs = 0,
 	.cd_gpio = -1,
 	.wp_gpio = -1,
-	.power_gpio = TEGRA_GPIO_PI6,
+	.power_gpio = -1,
 };
 
 static struct platform_device tegra_sdhci_device0 = {
@@ -189,10 +224,14 @@ static int ventana_wifi_power(int on)
 {
 	pr_debug("%s: %d\n", __func__, on);
 
-	gpio_set_value(VENTANA_WLAN_PWR, on);
-	mdelay(100);
+//	gpio_set_value(VENTANA_WLAN_PWR, on);
+	if (on)
+		gpio_direction_input(PBJ20_WIFI_IRQ_GPIO);
+	else
+		gpio_direction_output(PBJ20_WIFI_IRQ_GPIO, 0);
+	mdelay(50);
 	gpio_set_value(VENTANA_WLAN_RST, on);
-	mdelay(200);
+	mdelay(80);
 
 	if (on)
 		clk_enable(wifi_32k_clk);
@@ -216,6 +255,12 @@ static int __init ventana_wifi_init(void)
 		return PTR_ERR(wifi_32k_clk);
 	}
 
+#if defined(CONFIG_BCM4329_HW_OOB) || defined(CONFIG_BCM4329_OOB_INTR_ONLY)
+	gpio_request(PBJ20_WIFI_IRQ_GPIO,"oob irq");
+	tegra_gpio_enable(PBJ20_WIFI_IRQ_GPIO);
+	gpio_direction_input(PBJ20_WIFI_IRQ_GPIO);
+#endif
+
 	gpio_request(VENTANA_WLAN_PWR, "wlan_power");
 	gpio_request(VENTANA_WLAN_RST, "wlan_rst");
 
@@ -236,17 +281,17 @@ int __init ventana_sdhci_init(void)
 {
 	gpio_request(tegra_sdhci_platform_data2.power_gpio, "sdhci2_power");
 	gpio_request(tegra_sdhci_platform_data2.cd_gpio, "sdhci2_cd");
-	gpio_request(tegra_sdhci_platform_data2.wp_gpio, "sdhci2_wp");
-	gpio_request(tegra_sdhci_platform_data3.power_gpio, "sdhci3_power");
+	//gpio_request(tegra_sdhci_platform_data2.wp_gpio, "sdhci2_wp");
+	//gpio_request(tegra_sdhci_platform_data3.power_gpio, "sdhci3_power");
 
 	tegra_gpio_enable(tegra_sdhci_platform_data2.power_gpio);
 	tegra_gpio_enable(tegra_sdhci_platform_data2.cd_gpio);
-	tegra_gpio_enable(tegra_sdhci_platform_data2.wp_gpio);
-	tegra_gpio_enable(tegra_sdhci_platform_data3.power_gpio);
+	//tegra_gpio_enable(tegra_sdhci_platform_data2.wp_gpio);
+	//tegra_gpio_enable(tegra_sdhci_platform_data3.power_gpio);
 
 	gpio_direction_output(tegra_sdhci_platform_data2.power_gpio, 1);
-	gpio_direction_output(tegra_sdhci_platform_data3.power_gpio, 1);
-	gpio_set_value(tegra_sdhci_platform_data3.power_gpio, 1);
+	//gpio_direction_output(tegra_sdhci_platform_data3.power_gpio, 1);
+	gpio_set_value(tegra_sdhci_platform_data2.power_gpio, 1);
 
 	platform_device_register(&tegra_sdhci_device3);
 	platform_device_register(&tegra_sdhci_device2);

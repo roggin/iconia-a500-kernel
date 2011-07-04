@@ -109,17 +109,20 @@ struct tps6586x {
 static inline int __tps6586x_read(struct i2c_client *client,
 				  int reg, uint8_t *val)
 {
-	int ret;
+	int ret,i;
+	int retry = 10;
 
-	ret = i2c_smbus_read_byte_data(client, reg);
-	if (ret < 0) {
-		dev_err(&client->dev, "failed reading at 0x%02x\n", reg);
-		return ret;
+	for ( i=0 ; i < retry; i++){
+		ret = i2c_smbus_read_byte_data(client, reg);
+		if (ret < 0) {
+			dev_err(&client->dev, "failed reading at 0x%02x, retry = %d\n", reg, i+1);
+			continue;
+		}
+		else {
+			*val = (uint8_t)ret;
+			return 0;
+		}
 	}
-
-	*val = (uint8_t)ret;
-
-	return 0;
 }
 
 static inline int __tps6586x_reads(struct i2c_client *client, int reg,
@@ -558,6 +561,9 @@ static int __devinit tps6586x_i2c_probe(struct i2c_client *client,
 
 	tps6586x_i2c_client = client;
 
+	// Using external oscillator...
+	tps6586x_set_bits(&client->dev, 0xc0, 0x40);
+
 	return 0;
 
 err_add_devs:
@@ -578,6 +584,25 @@ static int __devexit tps6586x_i2c_remove(struct i2c_client *client)
 	return 0;
 }
 
+#ifdef CONFIG_PM
+static int tps6586x_suspend(struct i2c_client *client,
+                                 pm_message_t state)
+{
+	struct tps6586x *tps6586x = i2c_get_clientdata(client);
+
+	disable_irq(tps6586x->client->irq);
+	return 0;
+}
+
+static int tps6586x_resume(struct i2c_client *client)
+{
+	struct tps6586x *tps6586x = i2c_get_clientdata(client);
+
+	enable_irq(tps6586x->client->irq);
+	return 0;
+}
+#endif
+
 static const struct i2c_device_id tps6586x_id_table[] = {
 	{ "tps6586x", 0 },
 	{ },
@@ -591,6 +616,10 @@ static struct i2c_driver tps6586x_driver = {
 	},
 	.probe		= tps6586x_i2c_probe,
 	.remove		= __devexit_p(tps6586x_i2c_remove),
+#ifdef CONFIG_PM
+	.suspend	= tps6586x_suspend,
+	.resume 	= tps6586x_resume,
+#endif
 	.id_table	= tps6586x_id_table,
 };
 

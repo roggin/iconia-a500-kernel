@@ -22,18 +22,46 @@
 #include "tegra_soc.h"
 
 #include <mach/audio.h>
+#include "../codecs/wm8903.h" //ddebug
 
 #define TEGRA_HP	0
 #define TEGRA_MIC	1
 #define TEGRA_LINE	2
 #define TEGRA_HEADSET	3
 #define TEGRA_HP_OFF	4
-#define TEGRA_SPK_ON	0
-#define TEGRA_SPK_OFF	1
+#define TEGRA_SPK_ON	1 //ddebug
+#define TEGRA_SPK_OFF	0 //ddebug
 
 static struct tegra_audio_data *audio_data;
 static int tegra_jack_func;
 static int tegra_spk_func;
+
+#ifdef TEGRA_DDBUG
+//ddebug - start
+static int amp_event(struct snd_soc_dapm_widget *widget, struct snd_kcontrol *kctl, int event)
+{
+/*
+ * enable pin to inform EC to enable recording path
+ * this can work only with reboot. The final solution will move to bootloader
+ * to fix the recording path is not working on first time to flash image
+*/
+	snd_soc_write(widget->codec, WM8903_GPIO_CONTROL_2, 0x10);  //inform EC to enable recording path
+
+	if(event)
+	{
+		snd_soc_write(widget->codec, WM8903_GPIO_CONTROL_3, 0x33);
+		printk("speaker enable \n");
+	}
+	else
+	{
+		snd_soc_write(widget->codec, WM8903_GPIO_CONTROL_3, 0x0);
+		printk("speaker disable \n");
+	}
+
+	return 0;
+}
+//ddebug - end
+#endif
 
 static void tegra_ext_control(struct snd_soc_codec *codec)
 {
@@ -108,7 +136,6 @@ static int tegra_set_spk(struct snd_kcontrol *kcontrol,
 {
 	struct snd_soc_codec *codec =  snd_kcontrol_chip(kcontrol);
 
-
 	if (tegra_spk_func == ucontrol->value.integer.value[0])
 		return 0;
 
@@ -121,16 +148,24 @@ static int tegra_set_spk(struct snd_kcontrol *kcontrol,
 static const struct snd_soc_dapm_widget tegra_dapm_widgets[] = {
 	SND_SOC_DAPM_HP("Headphone Jack", NULL),
 	SND_SOC_DAPM_MIC("Mic Jack", NULL),
+#ifdef TEGRA_DDBUG
+	SND_SOC_DAPM_SPK("Ext Spk", amp_event), //ddebug
+#else
 	SND_SOC_DAPM_SPK("Ext Spk", NULL),
+#endif
 	SND_SOC_DAPM_LINE("Line Jack", NULL),
 	SND_SOC_DAPM_HP("Headset Jack", NULL),
+	SND_SOC_DAPM_HP("Dock Headset Jack", NULL),
 };
 
 /* Tegra machine audio map (connections to the codec pins) */
 static const struct snd_soc_dapm_route audio_map[] = {
 
 	/* headset Jack  - in = micin, out = LHPOUT*/
-	{"Headset Jack", NULL, "HPOUTL"},
+	{"Headset Jack", NULL, "HPOUTR"}, {"Headset Jack", NULL, "HPOUTL"},
+
+	/* dock headset Jack  - in = micin, out = LHPOUT*/
+	{"Dock Headset Jack", NULL, "HPOUTR"}, {"Dock Headset Jack", NULL, "HPOUTL"},
 
 	/* headphone connected to LHPOUT1, RHPOUT1 */
 	{"Headphone Jack", NULL, "HPOUTR"}, {"Headphone Jack", NULL, "HPOUTL"},

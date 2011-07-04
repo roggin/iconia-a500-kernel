@@ -24,7 +24,8 @@
  * see datasheet.
  */
 
-#define MXT_I2C_ADDRESS                                 MXT1386_I2C_ADDR3
+//ddebug #define MXT_I2C_ADDRESS                                 MXT1386_I2C_ADDR3
+#define MXT_I2C_ADDRESS                                 MXT1386_I2C_ADDR1  //ddebug
 
 #define MXT_BL_ADDRESS                                  0x25
 

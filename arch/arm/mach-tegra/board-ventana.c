@@ -41,10 +41,6 @@
 #include <linux/i2c/panjit_ts.h>
 #endif
 
-#ifdef CONFIG_TOUCHSCREEN_ATMEL_MT_T9
-#include <linux/i2c/atmel_maxtouch.h>
-#endif
-
 #include <mach/clk.h>
 #include <mach/iomap.h>
 #include <mach/irqs.h>
@@ -66,6 +62,13 @@
 #include "gpio-names.h"
 #include "fuse.h"
 #include "wakeups-t2.h"
+
+#ifdef CONFIG_ANDROID_TIMED_GPIO
+#include <../../../drivers/staging/android/timed_output.h>
+#include <../../../drivers/staging/android/timed_gpio.h>
+#endif
+
+extern void SysShutdown(void );
 
 static struct usb_mass_storage_platform_data tegra_usb_fsg_platform = {
 	.vendor = "NVIDIA",
@@ -188,6 +191,9 @@ static noinline void __init tegra_setup_bluesleep(void)
 		goto err_free_dev;
 	}
 
+	tegra_gpio_enable(TEGRA_GPIO_PU6);
+	tegra_gpio_enable(TEGRA_GPIO_PU1);
+
 	res[0].name   = "gpio_host_wake";
 	res[0].start  = TEGRA_GPIO_PU6;
 	res[0].end    = TEGRA_GPIO_PU6;
@@ -230,10 +236,10 @@ static __initdata struct tegra_clk_init_table ventana_clk_init_table[] = {
 	{ "uartc",	"pll_m",	600000000,	false},
 	{ "blink",	"clk_32k",	32768,		false},
 	{ "pll_p_out4",	"pll_p",	24000000,	true },
-	{ "pwm",	"clk_32k",	32768,		false},
+	{ "pwm",	"clk_m",	12000000,	false},
 	{ "pll_a",	NULL,		11289600,	true},
 	{ "pll_a_out0",	NULL,		11289600,	true},
-	{ "i2s1",	"pll_a_out0",	11289600,	true},
+	{ "i2s1",	"pll_a_out0",	2822400,	true},
 	{ "i2s2",	"pll_a_out0",	11289600,	true},
 	{ "audio",	"pll_a_out0",	11289600,	true},
 	{ "audio_2x",	"audio",	22579200,	true},
@@ -242,15 +248,16 @@ static __initdata struct tegra_clk_init_table ventana_clk_init_table[] = {
 	{ NULL,		NULL,		0,		0},
 };
 
-#define USB_MANUFACTURER_NAME		"NVIDIA"
-#define USB_PRODUCT_NAME		"Ventana"
-#define USB_PRODUCT_ID_MTP_ADB		0x7100
-#define USB_PRODUCT_ID_MTP		0x7102
-#define USB_PRODUCT_ID_RNDIS		0x7103
-#define USB_VENDOR_ID			0x0955
+#define USB_MANUFACTURER_NAME		"ACER"
+#define USB_PRODUCT_NAME		"ACER Iconia Tab A500"
+#define USB_PRODUCT_ID_MTP_ADB		0x3325
+#define USB_PRODUCT_ID_ADB		0x7101
+#define USB_PRODUCT_ID_MTP		0x3341
+#define USB_PRODUCT_ID_RNDIS		0x3343
+#define USB_VENDOR_ID			0x0502
 
-static char *usb_functions_mtp_ums[] = { "mtp", "usb_mass_storage" };
-static char *usb_functions_mtp_adb_ums[] = { "mtp", "adb", "usb_mass_storage" };
+static char *usb_functions_mtp[] = { "mtp"};
+static char *usb_functions_mtp_adb[] = { "mtp", "adb"};
 #ifdef CONFIG_USB_ANDROID_RNDIS
 static char *usb_functions_rndis[] = { "rndis" };
 static char *usb_functions_rndis_adb[] = { "rndis", "adb" };
@@ -259,21 +266,22 @@ static char *usb_functions_all[] = {
 #ifdef CONFIG_USB_ANDROID_RNDIS
 	"rndis",
 #endif
+#ifdef CONFIG_USB_ANDROID_MTP
 	"mtp",
+#endif
 	"adb",
-	"usb_mass_storage"
 };
 
 static struct android_usb_product usb_products[] = {
 	{
 		.product_id     = USB_PRODUCT_ID_MTP,
-		.num_functions  = ARRAY_SIZE(usb_functions_mtp_ums),
-		.functions      = usb_functions_mtp_ums,
+		.num_functions  = ARRAY_SIZE(usb_functions_mtp),
+		.functions      = usb_functions_mtp,
 	},
 	{
 		.product_id     = USB_PRODUCT_ID_MTP_ADB,
-		.num_functions  = ARRAY_SIZE(usb_functions_mtp_adb_ums),
-		.functions      = usb_functions_mtp_adb_ums,
+		.num_functions  = ARRAY_SIZE(usb_functions_mtp_adb),
+		.functions      = usb_functions_mtp_adb,
 	},
 #ifdef CONFIG_USB_ANDROID_RNDIS
 	{
@@ -292,7 +300,11 @@ static struct android_usb_product usb_products[] = {
 /* standard android USB platform data */
 static struct android_usb_platform_data andusb_plat = {
 	.vendor_id              = USB_VENDOR_ID,
+#ifdef CONFIG_USB_ANDROID_MTP
 	.product_id             = USB_PRODUCT_ID_MTP_ADB,
+#else
+	.product_id             = USB_PRODUCT_ID_ADB,
+#endif
 	.manufacturer_name      = USB_MANUFACTURER_NAME,
 	.product_name           = USB_PRODUCT_NAME,
 	.serial_number          = NULL,
@@ -363,7 +375,7 @@ static const struct tegra_pingroup_config i2c2_gen2 = {
 static struct tegra_i2c_platform_data ventana_i2c2_platform_data = {
 	.adapter_nr	= 1,
 	.bus_count	= 2,
-	.bus_clk_rate	= { 400000, 10000 },
+	.bus_clk_rate	= { 50000, 100000 },
 	.bus_mux	= { &i2c2_ddc, &i2c2_gen2 },
 	.bus_mux_len	= { 1, 1 },
 };
@@ -387,7 +399,7 @@ static struct tegra_audio_platform_data tegra_audio_pdata[] = {
 		.i2s_master	= true,
 		.dma_on		= true,  /* use dma by default */
 		.i2s_master_clk = 44100,
-		.i2s_clk_rate	= 240000000,
+		.i2s_clk_rate	= 2822400,
 		.dap_clk	= "clk_dev1",
 		.audio_sync_clk = "audio_2x",
 		.mode		= I2S_BIT_FORMAT_I2S,
@@ -499,11 +511,22 @@ static void ventana_i2c_init(void)
 
 
 #ifdef CONFIG_KEYBOARD_GPIO
-#define GPIO_KEY(_id, _gpio, _iswake)		\
+//ddebug #define GPIO_KEY(_id, _gpio, _iswake)		\
+//ddebug 	{					\
+//ddebug 		.code = _id,			\
+//ddebug 		.gpio = TEGRA_GPIO_##_gpio,	\
+//ddebug 		.active_low = 1,		\
+//ddebug 		.desc = #_id,			\
+//ddebug 		.type = EV_KEY,			\
+//ddebug 		.wakeup = _iswake,		\
+//ddebug 		.debounce_interval = 10,	\
+//ddebug 	}
+//ddebug - start
+#define GPIO_KEY(_id, _gpio,_isactivelow, _iswake)		\
 	{					\
 		.code = _id,			\
 		.gpio = TEGRA_GPIO_##_gpio,	\
-		.active_low = 1,		\
+		.active_low = _isactivelow,		\
 		.desc = #_id,			\
 		.type = EV_KEY,			\
 		.wakeup = _iswake,		\
@@ -511,13 +534,19 @@ static void ventana_i2c_init(void)
 	}
 
 static struct gpio_keys_button ventana_keys[] = {
-	[0] = GPIO_KEY(KEY_FIND, PQ3, 0),
-	[1] = GPIO_KEY(KEY_HOME, PQ1, 0),
-	[2] = GPIO_KEY(KEY_BACK, PQ2, 0),
-	[3] = GPIO_KEY(KEY_VOLUMEUP, PQ5, 0),
-	[4] = GPIO_KEY(KEY_VOLUMEDOWN, PQ4, 0),
-	[5] = GPIO_KEY(KEY_POWER, PV2, 1),
-	[6] = GPIO_KEY(KEY_MENU, PC7, 0),
+//ddebug 	[0] = GPIO_KEY(KEY_FIND, PQ3, 0),
+//ddebug 	[1] = GPIO_KEY(KEY_HOME, PQ1, 0),
+//ddebug 	[2] = GPIO_KEY(KEY_BACK, PQ2, 0),
+//ddebug 	[3] = GPIO_KEY(KEY_VOLUMEUP, PQ5, 0),
+//ddebug 	[4] = GPIO_KEY(KEY_VOLUMEDOWN, PQ4, 0),
+//ddebug 	[5] = GPIO_KEY(KEY_POWER, PV2, 1),
+//ddebug 	[6] = GPIO_KEY(KEY_MENU, PC7, 0),
+//ddebug - start
+        [0] = GPIO_KEY(KEY_VOLUMEUP, PQ4, 1,  0),
+        [1] = GPIO_KEY(KEY_VOLUMEDOWN, PQ5, 1, 0),
+        [2] = GPIO_KEY(KEY_POWER, PC7, 0, 1),
+        [3] = GPIO_KEY(KEY_POWER, PI3, 0, 0),
+//ddebug - end
 };
 
 #define PMC_WAKE_STATUS 0x14
@@ -527,7 +556,8 @@ static int ventana_wakeup_key(void)
 	unsigned long status =
 		readl(IO_ADDRESS(TEGRA_PMC_BASE) + PMC_WAKE_STATUS);
 
-	return status & TEGRA_WAKE_GPIO_PV2 ? KEY_POWER : KEY_RESERVED;
+//ddebug 	return status & TEGRA_WAKE_GPIO_PV2 ? KEY_POWER : KEY_RESERVED;
+	return status & TEGRA_WAKE_GPIO_PC7 ? KEY_POWER : KEY_RESERVED; //ddebug
 }
 
 static struct gpio_keys_platform_data ventana_keys_platform_data = {
@@ -553,15 +583,88 @@ static void ventana_keys_init(void)
 }
 #endif
 
+#ifdef CONFIG_DOCK
+static struct gpio_switch_platform_data dock_switch_platform_data = {
+        .gpio = TEGRA_GPIO_PR0,
+};
+
+static struct platform_device dock_switch = {
+        .name   = "acer-dock",
+        .id     = -1,
+        .dev    = {
+                .platform_data  = &dock_switch_platform_data,
+        },
+};
+#endif
+
+#ifdef CONFIG_ROTATELOCK
+static struct gpio_switch_platform_data rotationlock_switch_platform_data = {
+        .gpio = TEGRA_GPIO_PQ2,
+};
+
+static struct platform_device rotationlock_switch = {
+        .name   = "rotationlock",
+        .id     = -1,
+        .dev    = {
+                .platform_data  = &rotationlock_switch_platform_data,
+        },
+};
+#endif
+
+#ifdef CONFIG_ANDROID_TIMED_GPIO
+static struct timed_gpio picasso_timed_gpios[] = {
+        {
+                .name = "vibrator",
+                .gpio = TEGRA_GPIO_PV5,
+                .max_timeout = 10000,
+                .active_low = 0,
+        },
+};
+
+static struct timed_gpio_platform_data picasso_timed_gpio_platform_data = {
+        .num_gpios      = ARRAY_SIZE(picasso_timed_gpios),
+        .gpios          = picasso_timed_gpios,
+};
+
+static struct platform_device picasso_timed_gpio_device = {
+        .name   = TIMED_GPIO_NAME,
+        .id     = 0,
+        .dev    = {
+                .platform_data  = &picasso_timed_gpio_platform_data,
+        },
+};
+#endif
+
 static struct platform_device tegra_camera = {
 	.name = "tegra_camera",
 	.id = -1,
 };
 
+#ifdef CONFIG_ANDROID_RAM_CONSOLE
+struct resource tegra_ram_console_resources[] = {
+	[0] = {
+		.start	= 0,
+		.end	= 0,
+		.flags	= IORESOURCE_MEM,
+	}
+};
+
+struct platform_device tegra_ram_console_device = {
+	.name			= "ram_console",
+	.id 			= -1,
+	.num_resources	= ARRAY_SIZE(tegra_ram_console_resources),
+	.resource		= tegra_ram_console_resources,
+};
+#endif
+
 static struct platform_device *ventana_devices[] __initdata = {
 	&tegra_usb_fsg_device,
 	&androidusb_device,
+#ifdef CONFIG_DOCK
+	&dock_switch,
+#else
 	&debug_uart,
+#endif
 	&tegra_uartb_device,
 	&tegra_uartc_device,
 	&pmu_device,
@@ -572,13 +675,22 @@ static struct platform_device *ventana_devices[] __initdata = {
 #ifdef CONFIG_KEYBOARD_GPIO
 	&ventana_keys_device,
 #endif
+#ifdef CONFIG_ANDROID_TIMED_GPIO
+        &picasso_timed_gpio_device,
+#endif
 	&tegra_wdt_device,
 	&tegra_i2s_device1,
 	&tegra_i2s_device2,
+#ifdef CONFIG_ROTATELOCK
+	&rotationlock_switch,
+#endif
 	&tegra_spdif_device,
 	&tegra_avp_device,
 	&tegra_camera,
 	&tegra_das_device,
+#ifdef CONFIG_ANDROID_RAM_CONSOLE
+	&tegra_ram_console_device,
+#endif
 };
 
 
@@ -608,46 +720,32 @@ static int __init ventana_touch_init_panjit(void)
 
 #ifdef CONFIG_TOUCHSCREEN_ATMEL_MT_T9
 /* Atmel MaxTouch touchscreen              Driver data */
-/*-----------------------------------------------------*/
-/*
- * Reads the CHANGELINE state; interrupt is valid if the changeline
- * is low.
- */
-static u8 read_chg(void)
-{
-	return gpio_get_value(TEGRA_GPIO_PV6);
-}
-
-static u8 valid_interrupt(void)
-{
-	return !read_chg();
-}
-
-static struct mxt_platform_data Atmel_mxt_info = {
-	/* Maximum number of simultaneous touches to report. */
-	.numtouch = 10,
-	// TODO: no need for any hw-specific things at init/exit?
-	.init_platform_hw = NULL,
-	.exit_platform_hw = NULL,
-	.max_x = 1366,
-	.max_y = 768,
-	.valid_interrupt = &valid_interrupt,
-	.read_chg = &read_chg,
-};
 
 static struct i2c_board_info __initdata i2c_info[] = {
 	{
-	 I2C_BOARD_INFO("maXTouch", MXT_I2C_ADDRESS),
+	 I2C_BOARD_INFO("maXTouch", 0X4C),
 	 .irq = TEGRA_GPIO_TO_IRQ(TEGRA_GPIO_PV6),
-	 .platform_data = &Atmel_mxt_info,
 	 },
 };
 
 static int __init ventana_touch_init_atmel(void)
 {
+        int ret;
+
 	tegra_gpio_enable(TEGRA_GPIO_PV6);
 	tegra_gpio_enable(TEGRA_GPIO_PQ7);
 
+        ret = gpio_request(TEGRA_GPIO_PV6, "atmel_maXTouch1386_irq_gpio");
+        if (ret < 0)
+                printk("atmel_maXTouch1386: gpio_request TEGRA_GPIO_PQ6 fail\n");
+
+	ret = gpio_request(TEGRA_GPIO_PQ7, "atmel_maXTouch1386");
+	if (ret < 0)
+  		printk("atmel_maXTouch1386: gpio_request fail\n");
+
+	ret = gpio_direction_output(TEGRA_GPIO_PQ7, 0);
+	if (ret < 0)
+  		printk("atmel_maXTouch1386: gpio_direction_output fail\n");
 	gpio_set_value(TEGRA_GPIO_PQ7, 0);
 	msleep(1);
 	gpio_set_value(TEGRA_GPIO_PQ7, 1);
@@ -668,7 +766,7 @@ static struct tegra_ehci_platform_data tegra_ehci_pdata[] = {
 	[1] = {
 			.phy_config = &ulpi_phy_config,
 			.operating_mode = TEGRA_USB_HOST,
-			.power_down_on_bus_suspend = 1,
+			.power_down_on_bus_suspend = 0,
 	},
 	[2] = {
 			.phy_config = &utmi_phy_config[1],
@@ -753,7 +851,7 @@ static void ventana_power_off(void)
 
 static void __init ventana_power_off_init(void)
 {
-	pm_power_off = ventana_power_off;
+	pm_power_off = SysShutdown;
 }
 
 #define SERIAL_NUMBER_LENGTH 20
@@ -784,6 +882,16 @@ static void ventana_usb_init(void)
 #endif
 }
 
+#ifdef CONFIG_DOCK
+static void dockin_init(void)
+{
+	platform_device_register(&tegra_uartd_device);
+
+	tegra_gpio_enable(TEGRA_GPIO_PR0);
+	tegra_gpio_enable(TEGRA_GPIO_PR1);
+}
+#endif
+
 static void __init tegra_ventana_init(void)
 {
 #if defined(CONFIG_TOUCHSCREEN_PANJIT_I2C) || \
@@ -801,9 +909,13 @@ static void __init tegra_ventana_init(void)
 	tegra_i2s_device2.dev.platform_data = &tegra_audio_pdata[1];
 	tegra_spdif_device.dev.platform_data = &tegra_spdif_pdata;
 	tegra_das_device.dev.platform_data = &tegra_das_pdata;
-	tegra_ehci2_device.dev.platform_data
-		= &ventana_ehci2_ulpi_platform_data;
+//ddebug 	tegra_ehci2_device.dev.platform_data
+//ddebug 		= &ventana_ehci2_ulpi_platform_data;
 	platform_add_devices(ventana_devices, ARRAY_SIZE(ventana_devices));
+
+#ifdef CONFIG_DOCK
+	dockin_init();
+#endif
 
 	ventana_sdhci_init();
 	ventana_charge_init();
@@ -815,13 +927,13 @@ static void __init tegra_ventana_init(void)
 	tegra_get_board_info(&BoardInfo);
 
 	/* boards with sku > 0 have atmel touch panels */
-	if (BoardInfo.sku) {
+//ddebug 	if (BoardInfo.sku) {
 		pr_info("Initializing Atmel touch driver\n");
 		ventana_touch_init_atmel();
-	} else {
-		pr_info("Initializing Panjit touch driver\n");
-		ventana_touch_init_panjit();
-	}
+//ddebug 	} else {
+//ddebug 		pr_info("Initializing Panjit touch driver\n");
+//ddebug 		ventana_touch_init_panjit();
+//ddebug 	}
 #endif
 
 #ifdef CONFIG_KEYBOARD_GPIO
@@ -842,6 +954,24 @@ static void __init tegra_ventana_init(void)
 #ifdef CONFIG_BT_BLUESLEEP
 	tegra_setup_bluesleep();
 #endif
+#ifdef CONFIG_ANDROID_TIMED_GPIO
+        tegra_gpio_enable(TEGRA_GPIO_PV5);
+#endif
+//ddebug - start
+        // [Peter] enable gpio for headphone detection
+        tegra_gpio_enable(TEGRA_GPIO_PW2);
+#ifdef CONFIG_ROTATELOCK
+        // [Peter] enable gpio for rotation lock
+        tegra_gpio_enable(TEGRA_GPIO_PQ2);
+#endif
+#ifdef CONFIG_DOCK && CONFIG_ACER_DOCK_HS
+        tegra_gpio_enable(TEGRA_GPIO_PX6);
+#endif
+	    // [Peter] enable gpio for simcard detection
+        tegra_gpio_enable(TEGRA_GPIO_PI7);
+        // [Peter] enable gpio for p-sensor
+        tegra_gpio_enable(TEGRA_GPIO_PC1);
+//ddebug - end
 }
 
 int __init tegra_ventana_protected_aperture_init(void)

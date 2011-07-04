@@ -28,6 +28,7 @@
 
 static struct tegra_wired_jack_conf ventana_wr_jack_conf = {
 	.hp_det_n = TEGRA_GPIO_PW2,
+	.dock_hp_det_n = TEGRA_GPIO_PX6,
 	.en_mic_ext = TEGRA_GPIO_PX1,
 	.en_mic_int = TEGRA_GPIO_PX0,
 };
@@ -45,6 +46,7 @@ int __init ventana_wired_jack_init(void)
 	int ret;
 
 	tegra_gpio_enable(ventana_wr_jack_conf.hp_det_n);
+	tegra_gpio_enable(ventana_wr_jack_conf.dock_hp_det_n);
 
 	ret = platform_device_register(&ventana_hs_jack_device);
 	return ret;

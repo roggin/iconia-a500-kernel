@@ -52,6 +52,8 @@ unsigned long tegra_lp0_vec_start;
 unsigned long tegra_lp0_vec_size;
 unsigned long tegra_grhost_aperture;
 
+extern void SysRestart(void );
+
 static struct board_info tegra_board_info = {
 	.board_id = -1,
 	.sku = -1,
@@ -140,7 +142,9 @@ static void tegra_pm_flush_console(void)
 static void tegra_pm_restart(char mode, const char *cmd)
 {
 	tegra_pm_flush_console();
-	arm_machine_restart(mode, cmd);
+	SysRestart();
+	//arm_machine_restart(mode, cmd);
+
 }
 
 void __init tegra_common_init(void)

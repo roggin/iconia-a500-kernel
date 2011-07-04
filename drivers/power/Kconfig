@@ -179,4 +179,16 @@ config BATTERY_INTEL_MID
 	  Say Y here to enable the battery driver on Intel MID
 	  platforms.
 
+config BATTERY_ECBAT
+	tristate "EC control and battery gauge"
+	depends on I2C
+	help
+	  Say Y to include support for EC control and battery behind EC.
+
+config LSC_FROM_EC
+	tristate "Load Lens Correction data from EC by Camera MI5140 2nd source(nonOTPM)"
+	depends on I2C && BATTERY_ECBAT
+	help
+	  Say Y to include support for Load Lens Correction data from EC.
+
 endif # POWER_SUPPLY

@@ -20,9 +20,7 @@
 
 #include <linux/types.h>
 #include <linux/gpio.h>
-#ifdef CONFIG_SWITCH
 #include <linux/switch.h>
-#endif
 #include <linux/notifier.h>
 #include <sound/jack.h>
 #include <sound/soc.h>
@@ -72,7 +70,6 @@ static struct snd_soc_jack_gpio wired_jack_gpios[] = {
 	},
 };
 
-#ifdef CONFIG_SWITCH
 static struct switch_dev wired_switch_dev = {
 	.name = "h2w",
 };
@@ -140,7 +137,6 @@ static int wired_swith_notify(struct notifier_block *self,
 static struct notifier_block wired_switch_nb = {
 	.notifier_call = wired_swith_notify,
 };
-#endif
 
 /* platform driver */
 static int tegra_wired_jack_probe(struct platform_device *pdev)
@@ -211,10 +207,8 @@ static int tegra_wired_jack_probe(struct platform_device *pdev)
 	tegra_wired_jack_conf.cdc_irq = cdc_irq;
 	tegra_wired_jack_conf.en_spkr = en_spkr;
 
-#ifdef CONFIG_SWITCH
 	snd_soc_jack_notifier_register(tegra_wired_jack,
 				       &wired_switch_nb);
-#endif
 
 	return ret;
 }
@@ -267,12 +261,10 @@ int tegra_jack_init(struct snd_soc_codec *codec)
 	if (ret < 0)
 		goto failed;
 
-#ifdef CONFIG_SWITCH
 	/* Addd h2w swith class support */
 	ret = switch_dev_register(&wired_switch_dev);
 	if (ret < 0)
 		goto switch_dev_failed;
-#endif
 
 	ret = platform_driver_register(&tegra_wired_jack_driver);
 	if (ret < 0)
@@ -280,10 +272,8 @@ int tegra_jack_init(struct snd_soc_codec *codec)
 
 	return 0;
 
-#ifdef CONFIG_SWITCH
 switch_dev_failed:
 	switch_dev_unregister(&wired_switch_dev);
-#endif
 platform_dev_failed:
 	platform_driver_unregister(&tegra_wired_jack_driver);
 failed:
@@ -296,9 +286,7 @@ failed:
 
 void tegra_jack_exit(void)
 {
-#ifdef CONFIG_SWITCH
 	switch_dev_unregister(&wired_switch_dev);
-#endif
 	platform_driver_unregister(&tegra_wired_jack_driver);
 
 	if (tegra_wired_jack) {

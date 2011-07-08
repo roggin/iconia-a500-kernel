@@ -18,30 +18,21 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
-#include <linux/gpio.h>
-#include <sound/soc-dapm.h>
-#include <mach/audio.h>
 
 #include "tegra_soc.h"
+
+#include <mach/audio.h>
 
 #define TEGRA_HP	0
 #define TEGRA_MIC	1
 #define TEGRA_LINE	2
 #define TEGRA_HEADSET	3
 #define TEGRA_HP_OFF	4
-
-#define TEGRA_LINEOUT_ON	0
-#define TEGRA_LINEOUT_OFF	1
-
-#define TEGRA_INT_SPK_ON	0
-#define TEGRA_INT_SPK_OFF	1
-
-extern struct wired_jack_conf tegra_wired_jack_conf;
+#define TEGRA_SPK_ON	0
+#define TEGRA_SPK_OFF	1
 
 static struct tegra_audio_data *audio_data;
-
 static int tegra_jack_func;
-static int tegra_lineout_func;
 static int tegra_spk_func;
 
 static void tegra_ext_control(struct snd_soc_codec *codec)
@@ -76,19 +67,11 @@ static void tegra_ext_control(struct snd_soc_codec *codec)
 		break;
 	}
 
-
-	if (tegra_lineout_func == TEGRA_LINEOUT_ON) {
-		snd_soc_dapm_enable_pin(codec, "Lineout");
+	if (tegra_spk_func == TEGRA_SPK_ON) {
+		snd_soc_dapm_enable_pin(codec, "Ext Spk");
 	} else {
-		snd_soc_dapm_disable_pin(codec, "Lineout");
+		snd_soc_dapm_disable_pin(codec, "Ext Spk");
 	}
-
-	if (tegra_spk_func == TEGRA_INT_SPK_ON) {
-		snd_soc_dapm_enable_pin(codec, "Int Spk");
-	} else {
-		snd_soc_dapm_disable_pin(codec, "Int Spk");
-	}
-
 	/* signal a DAPM event */
 	snd_soc_dapm_sync(codec);
 }
@@ -109,26 +92,6 @@ static int tegra_set_jack(struct snd_kcontrol *kcontrol,
 		return 0;
 
 	tegra_jack_func = ucontrol->value.integer.value[0];
-	tegra_ext_control(codec);
-	return 1;
-}
-
-static int tegra_get_lineout(struct snd_kcontrol *kcontrol,
-			     struct snd_ctl_elem_value *ucontrol)
-{
-	ucontrol->value.integer.value[0] = tegra_lineout_func;
-	return 0;
-}
-
-static int tegra_set_lineout(struct snd_kcontrol *kcontrol,
-			     struct snd_ctl_elem_value *ucontrol)
-{
-	struct snd_soc_codec *codec =  snd_kcontrol_chip(kcontrol);
-
-	if (tegra_lineout_func == ucontrol->value.integer.value[0])
-		return 0;
-
-	tegra_lineout_func = ucontrol->value.integer.value[0];
 	tegra_ext_control(codec);
 	return 1;
 }
@@ -154,22 +117,11 @@ static int tegra_set_spk(struct snd_kcontrol *kcontrol,
 	return 1;
 }
 
-static int tegra_dapm_event_int_spk(struct snd_soc_dapm_widget* w,
-				    struct snd_kcontrol* k, int event)
-{
-	if (tegra_wired_jack_conf.en_spkr != -1)
-		gpio_set_value_cansleep(tegra_wired_jack_conf.en_spkr,
-					SND_SOC_DAPM_EVENT_ON(event));
-
-	return 0;
-}
-
 /*tegra machine dapm widgets */
 static const struct snd_soc_dapm_widget tegra_dapm_widgets[] = {
 	SND_SOC_DAPM_HP("Headphone Jack", NULL),
 	SND_SOC_DAPM_MIC("Mic Jack", NULL),
-	SND_SOC_DAPM_SPK("Lineout", NULL),
-	SND_SOC_DAPM_SPK("Int Spk", tegra_dapm_event_int_spk),
+	SND_SOC_DAPM_SPK("Ext Spk", NULL),
 	SND_SOC_DAPM_LINE("Line Jack", NULL),
 	SND_SOC_DAPM_HP("Headset Jack", NULL),
 };
@@ -183,15 +135,8 @@ static const struct snd_soc_dapm_route audio_map[] = {
 	/* headphone connected to LHPOUT1, RHPOUT1 */
 	{"Headphone Jack", NULL, "HPOUTR"}, {"Headphone Jack", NULL, "HPOUTL"},
 
-	/* build-in speaker connected to LON/P RON/P */
-	{"Int Spk", NULL, "RON"},
-	{"Int Spk", NULL, "ROP"},
-	{"Int Spk", NULL, "LON"},
-	{"Int Spk", NULL, "LOP"},
-
-	/* lineout connected to LINEOUTR and LINEOUTL */
-	{"Lineout", NULL, "LINEOUTR"},
-	{"Lineout", NULL, "LINEOUTL"},
+	/* speaker connected to LOUT, ROUT */
+	{"Ext Spk", NULL, "LINEOUTR"}, {"Ext Spk", NULL, "LINEOUTL"},
 
 	/* mic is connected to MICIN (via right channel of headphone jack) */
 	{"IN1L", NULL, "Mic Jack"},
@@ -203,21 +148,16 @@ static const struct snd_soc_dapm_route audio_map[] = {
 static const char *jack_function[] = {"Headphone", "Mic", "Line", "Headset",
 					"Off"
 					};
-static const char *lineout_function[] = {"On", "Off"};
 static const char *spk_function[] = {"On", "Off"};
-
 static const struct soc_enum tegra_enum[] = {
 	SOC_ENUM_SINGLE_EXT(5, jack_function),
-	SOC_ENUM_SINGLE_EXT(2, lineout_function),
 	SOC_ENUM_SINGLE_EXT(2, spk_function),
 };
 
 static const struct snd_kcontrol_new tegra_controls[] = {
 	SOC_ENUM_EXT("Jack Function", tegra_enum[0], tegra_get_jack,
 			tegra_set_jack),
-	SOC_ENUM_EXT("Lineout Function", tegra_enum[1], tegra_get_lineout,
-			tegra_set_lineout),
-	SOC_ENUM_EXT("Speaker Function", tegra_enum[2], tegra_get_spk,
+	SOC_ENUM_EXT("Speaker Function", tegra_enum[1], tegra_get_spk,
 			tegra_set_spk),
 };
 
@@ -244,16 +184,13 @@ static void tegra_audio_route(int device_new, int is_call_mode_new)
 		}
 
 		if (play_device_new & TEGRA_AUDIO_DEVICE_OUT_SPEAKER) {
-			tegra_lineout_func = TEGRA_LINEOUT_OFF;
-			tegra_spk_func = TEGRA_INT_SPK_ON;
+			tegra_spk_func = TEGRA_SPK_ON;
 		}
 		else if (play_device_new & TEGRA_AUDIO_DEVICE_OUT_EAR_SPEAKER) {
-			tegra_spk_func = TEGRA_INT_SPK_OFF;
-			tegra_lineout_func = TEGRA_LINEOUT_ON;
+			tegra_spk_func = TEGRA_SPK_ON;
 		}
 		else {
-			tegra_lineout_func = TEGRA_LINEOUT_OFF;
-			tegra_spk_func = TEGRA_INT_SPK_OFF;
+			tegra_spk_func = TEGRA_SPK_OFF;
 		}
 		tegra_ext_control(audio_data->codec);
 		audio_data->play_device = play_device_new;
@@ -498,8 +435,7 @@ int tegra_controls_init(struct snd_soc_codec *codec)
 
 		/* Default to HP output */
 		tegra_jack_func = TEGRA_HP;
-		tegra_lineout_func = TEGRA_LINEOUT_ON;
-		tegra_spk_func = TEGRA_INT_SPK_ON;
+		tegra_spk_func = TEGRA_SPK_ON;
 		tegra_ext_control(codec);
 
 		snd_soc_dapm_sync(codec);

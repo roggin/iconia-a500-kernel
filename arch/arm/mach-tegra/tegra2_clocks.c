@@ -1226,38 +1226,25 @@ static struct clk_ops tegra_audio_sync_clk_ops = {
 };
 
 /* call this function after pinmux configuration */
-static int tegra2_cdev_clk_set_parent(struct clk *c, struct clk *p)
+static void tegra2_cdev_clk_set_parent(struct clk *c)
 {
 	const struct clk_mux_sel *mux = 0;
 	const struct clk_mux_sel *sel;
 	enum tegra_pingroup pg = TEGRA_PINGROUP_CDEV1;
 	int val;
 
-	if (p) {
-		for (sel = c->inputs; sel->input != NULL; sel++) {
-			if (sel->input == p) {
-				clk_reparent(c, p);
-				return 0;
-			}
-		}
-	}
-	else {
-		/* Get pinmux setting for cdev1 and cdev2 from APB_MISC reg */
-		if (!strcmp(c->name, "clk_dev2"))
-			pg = TEGRA_PINGROUP_CDEV2;
+	/* Get pinmux setting for cdev1 and cdev2 from APB_MISC register */
+	if (!strcmp(c->name, "clk_dev2"))
+		pg = TEGRA_PINGROUP_CDEV2;
 
-		val = tegra_pinmux_get_func(pg);
-		for (sel = c->inputs; sel->input != NULL; sel++) {
-			if (val == sel->value) {
-				mux = sel;
-				BUG_ON(!mux);
-				clk_reparent(c, mux->input);
-				return 0;
-			}
-		}
+	val = tegra_pinmux_get_func(pg);
+	for (sel = c->inputs; sel->input != NULL; sel++) {
+		if (val == sel->value)
+			mux = sel;
 	}
+	BUG_ON(!mux);
 
-	return -EINVAL;
+	c->parent = mux->input;
 }
 
 /* cdev1 and cdev2 (dap_mclk1 and dap_mclk2) ops */
@@ -1282,7 +1269,7 @@ static int tegra2_cdev_clk_enable(struct clk *c)
 {
 	if (!c->parent) {
 		/* Set parent from inputs */
-		tegra2_cdev_clk_set_parent(c, NULL);
+		tegra2_cdev_clk_set_parent(c);
 		clk_enable(c->parent);
 	}
 
@@ -1301,7 +1288,6 @@ static struct clk_ops tegra_cdev_clk_ops = {
 	.init			= &tegra2_cdev_clk_init,
 	.enable			= &tegra2_cdev_clk_enable,
 	.disable		= &tegra2_cdev_clk_disable,
-	.set_parent		= &tegra2_cdev_clk_set_parent,
 };
 
 /* shared bus ops */

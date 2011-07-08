@@ -46,15 +46,23 @@ enum {
 	MIC = 0x11,
 };
 
-/* These values are copied from WiredAccessoryObserver */
-enum headset_state {
-	BIT_NO_HEADSET = 0,
-	BIT_HEADSET = (1 << 0),
-	BIT_HEADSET_NO_MIC = (1 << 1),
-};
-
 /* jack */
 static struct snd_soc_jack *tegra_wired_jack;
+
+static struct snd_soc_jack_pin wired_jack_pins[] = {
+	{
+		.pin = "Headset Jack",
+		.mask = SND_JACK_HEADSET,
+	},
+	{
+		.pin = "Headphone Jack",
+		.mask = SND_JACK_HEADPHONE,
+	},
+	{
+		.pin = "Mic Jack",
+		.mask = SND_JACK_MICROPHONE,
+	},
+};
 
 static struct snd_soc_jack_gpio wired_jack_gpios[] = {
 	{
@@ -83,12 +91,13 @@ void tegra_switch_set_state(int state)
 	switch_set_state(&wired_switch_dev, state);
 }
 
-static enum headset_state get_headset_state(void)
+static int wired_switch_notify(struct notifier_block *self,
+			      unsigned long action, void* dev)
 {
-	enum headset_state state = BIT_NO_HEADSET;
+	int state = 0;
 	int flag = 0;
 	int hp_gpio = -1;
-	int mic_gpio = -1;
+	int mic_gpio = -1;;
 
 	/* hp_det_n is low active pin */
 	if (tegra_wired_jack_conf.hp_det_n != -1)
@@ -100,30 +109,40 @@ static enum headset_state get_headset_state(void)
 
 	flag = (hp_gpio << 4) | mic_gpio;
 
-	switch (flag) {
-	case NO_DEVICE:
-		state = BIT_NO_HEADSET;
+	switch (action) {
+	case SND_JACK_HEADSET:
+		state = 1;
 		break;
-	case HEADSET_WITH_MIC:
-		state = BIT_HEADSET;
+	case SND_JACK_HEADPHONE:
+		if (mic_gpio)
+			state = 1;
+		else
+			state = 2;
 		break;
-	case MIC:
-		/* mic: would not report */
-		break;
-	case HEADSET_WITHOUT_MIC:
-		state = BIT_HEADSET_NO_MIC;
+	case SND_JACK_MICROPHONE:
+		if (!hp_gpio) /* low = hp */
+			state = 1;
 		break;
 	default:
-		state = BIT_NO_HEADSET;
+		switch (flag) {
+		case NO_DEVICE:
+			state = 0;
+			break;
+		case HEADSET_WITH_MIC:
+			state = 1;
+			break;
+		case MIC:
+			/* mic: would not report */
+			break;
+		case HEADSET_WITHOUT_MIC:
+			state = 2;
+			break;
+		default:
+			state = 0;
+		}
 	}
 
-	return state;
-}
-
-static int wired_switch_notify(struct notifier_block *self,
-			      unsigned long action, void* dev)
-{
-	tegra_switch_set_state(get_headset_state());
+	tegra_switch_set_state(state);
 
 	return NOTIFY_OK;
 }
@@ -131,7 +150,7 @@ static int wired_switch_notify(struct notifier_block *self,
 
 void tegra_jack_resume(void)
 {
-	tegra_switch_set_state(get_headset_state());
+	wired_switch_notify(NULL, SND_JACK_NO_TYPE_SPECIFIED, NULL);
 }
 
 static struct notifier_block wired_switch_nb = {
@@ -213,9 +232,6 @@ static int tegra_wired_jack_probe(struct platform_device *pdev)
 	tegra_wired_jack_conf.cdc_irq = cdc_irq;
 	tegra_wired_jack_conf.en_spkr = en_spkr;
 
-	// Communicate the jack connection state at device bootup
-	tegra_switch_set_state(get_headset_state());
-
 #ifdef CONFIG_SWITCH
 	snd_soc_jack_notifier_register(tegra_wired_jack,
 				       &wired_switch_nb);
@@ -268,6 +284,12 @@ int tegra_jack_init(struct snd_soc_codec *codec)
 	/* Add jack detection */
 	ret = snd_soc_jack_new(codec->socdev->card, "Wired Accessory Jack",
 			       SND_JACK_HEADSET, tegra_wired_jack);
+	if (ret < 0)
+		goto failed;
+
+	ret = snd_soc_jack_add_pins(tegra_wired_jack,
+				    ARRAY_SIZE(wired_jack_pins),
+				    wired_jack_pins);
 	if (ret < 0)
 		goto failed;
 

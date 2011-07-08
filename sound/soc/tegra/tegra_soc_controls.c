@@ -167,10 +167,10 @@ static void tegra_audio_route(int device_new, int is_call_mode_new)
 	int capture_device_new = device_new & TEGRA_AUDIO_DEVICE_IN_ALL;
 	int is_bt_sco_mode =
 		(play_device_new & TEGRA_AUDIO_DEVICE_OUT_BT_SCO) ||
-		(capture_device_new & TEGRA_AUDIO_DEVICE_OUT_BT_SCO);
+		(capture_device_new & TEGRA_AUDIO_DEVICE_IN_BT_SCO);
 	int was_bt_sco_mode =
 		(audio_data->play_device & TEGRA_AUDIO_DEVICE_OUT_BT_SCO) ||
-		(audio_data->capture_device & TEGRA_AUDIO_DEVICE_OUT_BT_SCO);
+		(audio_data->capture_device & TEGRA_AUDIO_DEVICE_IN_BT_SCO);
 
 	if (play_device_new != audio_data->play_device) {
 		if (play_device_new & TEGRA_AUDIO_DEVICE_OUT_HEADPHONE) {

@@ -486,9 +486,6 @@ int tegra_controls_init(struct snd_soc_codec *codec)
 {
 	int err;
 
-	if (codec == NULL)
-		return -ENODEV;
-
 	if (!audio_data) {
 		audio_data = kzalloc(sizeof(*audio_data), GFP_KERNEL);
 		if (!audio_data) {

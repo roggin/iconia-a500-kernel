@@ -158,12 +158,12 @@ static __initdata struct tegra_clk_init_table whistler_clk_init_table[] = {
 	{ "uartc",	"pll_m",	600000000,	false},
 	{ "pwm",	"clk_32k",	32768,		false},
 	{ "kbc",	"clk_32k",	32768,		true},
-	{ "pll_a",	NULL,		56448000,	false},
-	{ "pll_a_out0",	NULL,		11289600,	false},
-	{ "i2s1",	"pll_a_out0",	11289600,	false},
-	{ "i2s2",	"pll_a_out0",	11289600,	false},
-	{ "audio",	"pll_a_out0",	11289600,	false},
-	{ "audio_2x",	"audio",	22579200,	false},
+	{ "pll_a",	NULL,		56448000,	true},
+	{ "pll_a_out0",	NULL,		11289600,	true},
+	{ "i2s1",	"pll_a_out0",	11289600,	true},
+	{ "i2s2",	"pll_a_out0",	11289600,	true},
+	{ "audio",	"pll_a_out0",	11289600,	true},
+	{ "audio_2x",	"audio",	22579200,	true},
 	{ "spdif_out",	"pll_a_out0",	5644800,	false},
 	{ "sdmmc2",	"pll_p",	25000000,	false},
 	{ NULL,		NULL,		0,		0},
@@ -244,63 +244,50 @@ static struct tegra_i2c_platform_data whistler_dvc_platform_data = {
 };
 
 static struct tegra_das_platform_data tegra_das_pdata = {
-	.dap_clk = "clk_dev1",
 	.tegra_dap_port_info_table = {
-		/* I2S1 <--> DAC1 <--> DAP1 <--> Hifi Codec */
 		[0] = {
+			.dac_port = tegra_das_port_none,
+			.codec_type = tegra_audio_codec_type_none,
+			.device_property = {
+				.num_channels = 0,
+				.bits_per_sample = 0,
+				.rate = 0,
+				.dac_dap_data_comm_format = 0,
+			},
+		},
+		/* I2S1 <--> DAC1 <--> DAP1 <--> Hifi Codec */
+		[1] = {
 			.dac_port = tegra_das_port_i2s1,
-			.dap_port = tegra_das_port_dap1,
 			.codec_type = tegra_audio_codec_type_hifi,
 			.device_property = {
 				.num_channels = 2,
 				.bits_per_sample = 16,
 				.rate = 44100,
-				.dac_dap_data_comm_format =
-						dac_dap_data_format_all,
+				.dac_dap_data_comm_format = dac_dap_data_format_i2s,
 			},
 		},
-		/* I2S2 <--> DAC2 <--> DAP2 <--> Voice Codec */
-		[1] = {
-			.dac_port = tegra_das_port_i2s2,
-			.dap_port = tegra_das_port_dap2,
-			.codec_type = tegra_audio_codec_type_voice,
-			.device_property = {
-				.num_channels = 1,
-				.bits_per_sample = 16,
-				.rate = 8000,
-				.dac_dap_data_comm_format =
-						dac_dap_data_format_all,
-			},
-		},
-		/* I2S2 <--> DAC2 <--> DAP3 <--> Baseband Codec */
 		[2] = {
-			.dac_port = tegra_das_port_i2s2,
-			.dap_port = tegra_das_port_dap3,
-			.codec_type = tegra_audio_codec_type_baseband,
+			.dac_port = tegra_das_port_none,
+			.codec_type = tegra_audio_codec_type_none,
 			.device_property = {
-				.num_channels = 1,
-				.bits_per_sample = 16,
-				.rate = 8000,
-				.dac_dap_data_comm_format =
-					dac_dap_data_format_dsp,
+				.num_channels = 0,
+				.bits_per_sample = 0,
+				.rate = 0,
+				.dac_dap_data_comm_format = 0,
 			},
 		},
-		/* I2S2 <--> DAC2 <--> DAP4 <--> BT SCO Codec */
 		[3] = {
-			.dac_port = tegra_das_port_i2s2,
-			.dap_port = tegra_das_port_dap4,
-			.codec_type = tegra_audio_codec_type_bluetooth,
+			.dac_port = tegra_das_port_none,
+			.codec_type = tegra_audio_codec_type_none,
 			.device_property = {
-				.num_channels = 1,
-				.bits_per_sample = 16,
-				.rate = 8000,
-				.dac_dap_data_comm_format =
-					dac_dap_data_format_dsp,
+				.num_channels = 0,
+				.bits_per_sample = 0,
+				.rate = 0,
+				.dac_dap_data_comm_format = 0,
 			},
 		},
 		[4] = {
 			.dac_port = tegra_das_port_none,
-			.dap_port = tegra_das_port_none,
 			.codec_type = tegra_audio_codec_type_none,
 			.device_property = {
 				.num_channels = 0,
@@ -314,30 +301,12 @@ static struct tegra_das_platform_data tegra_das_pdata = {
 	.tegra_das_con_table = {
 		[0] = {
 			.con_id = tegra_das_port_con_id_hifi,
-			.num_entries = 2,
+			.num_entries = 4,
 			.con_line = {
 				[0] = {tegra_das_port_i2s1, tegra_das_port_dap1, true},
 				[1] = {tegra_das_port_dap1, tegra_das_port_i2s1, false},
-			},
-		},
-		[1] = {
-			.con_id = tegra_das_port_con_id_bt_codec,
-			.num_entries = 4,
-			.con_line = {
-				[0] = {tegra_das_port_i2s2, tegra_das_port_dap4, true},
-				[1] = {tegra_das_port_dap4, tegra_das_port_i2s2, false},
-				[2] = {tegra_das_port_i2s1, tegra_das_port_dap1, true},
-				[3] = {tegra_das_port_dap1, tegra_das_port_i2s1, false},
-			},
-		},
-		[2] = {
-			.con_id = tegra_das_port_con_id_voicecall_no_bt,
-			.num_entries = 4,
-			.con_line = {
-				[0] = {tegra_das_port_dap2, tegra_das_port_dap3, true},
-				[1] = {tegra_das_port_dap3, tegra_das_port_dap2, false},
-				[2] = {tegra_das_port_i2s1, tegra_das_port_dap1, true},
-				[3] = {tegra_das_port_dap1, tegra_das_port_i2s1, false},
+				[2] = {tegra_das_port_i2s2, tegra_das_port_dap4, true},
+				[3] = {tegra_das_port_dap4, tegra_das_port_i2s2, false},
 			},
 		},
 	}

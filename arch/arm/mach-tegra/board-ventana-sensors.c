@@ -176,18 +176,14 @@ static void ventana_ssl3250a_exit(void)
 
 static int ventana_ssl3250a_gpio_strb(int val)
 {
-	int prev_val;
-	prev_val = gpio_get_value(CAMERA_FLASH_STRB_GPIO);
 	gpio_set_value(CAMERA_FLASH_STRB_GPIO, val);
-	return prev_val;
+	return 0;
 };
 
 static int ventana_ssl3250a_gpio_act(int val)
 {
-	int prev_val;
-	prev_val = gpio_get_value(CAMERA_FLASH_ACT_GPIO);
 	gpio_set_value(CAMERA_FLASH_ACT_GPIO, val);
-	return prev_val;
+	return 0;
 };
 
 static struct ssl3250a_platform_data ventana_ssl3250a_data = {

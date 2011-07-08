@@ -34,12 +34,11 @@ struct tegra_i2s_info {
 	int irq;
 	/* Control for whole I2S (Data format, etc.) */
 	unsigned int bit_format;
-	int ref_count;
 	struct i2s_runtime_data i2s_regs;
 	struct das_regs_cache das_regs;
 };
 
-void setup_i2s_dma_request(struct snd_pcm_substream *substream,
+void setup_dma_request(struct snd_pcm_substream *substream,
 			struct tegra_dma_req *req,
 			void (*dma_callback)(struct tegra_dma_req *req),
 			void *dma_data)
@@ -267,6 +266,11 @@ static int tegra_i2s_set_dai_sysclk(struct snd_soc_dai *cpu_dai,
 
 	if (info && info->i2s_clk) {
 		clk_set_rate(info->i2s_clk, pdata->i2s_clk_rate);
+		if (clk_enable(info->i2s_clk)) {
+			pr_err("%s: failed to enable i2s-%d clock\n", __func__,
+			      cpu_dai->id+1);
+			return -EIO;
+		}
 	}
 	else {
 		pr_err("%s: could not get i2s-%d clock\n", __func__,
@@ -353,16 +357,12 @@ int tegra_i2s_suspend(struct snd_soc_dai *cpu_dai)
 	i2s_get_all_regs(cpu_dai->id, &info->i2s_regs);
 	tegra_das_get_all_regs(&info->das_regs);
 
-	clk_disable(info->dap_mclk);
-
 	return 0;
 }
 
 int tegra_i2s_resume(struct snd_soc_dai *cpu_dai)
 {
 	struct tegra_i2s_info *info = cpu_dai->private_data;
-
-	clk_enable(info->dap_mclk);
 
 	tegra_das_set_all_regs(&info->das_regs);
 	i2s_set_all_regs(cpu_dai->id, &info->i2s_regs);
@@ -380,14 +380,12 @@ static int tegra_i2s_startup(struct snd_pcm_substream *substream,
 {
 	struct tegra_i2s_info *info = dai->private_data;
 
-	if (!info->ref_count) {
-		/* set das pins state to normal */
-		tegra_das_power_mode(true);
+	clk_enable(info->dap_mclk);
+	clk_enable(info->audio_sync_clk);
 
-		clk_enable(info->audio_sync_clk);
-		clk_enable(info->i2s_clk);
-	}
-	info->ref_count++;
+	/* set das pins state to normal */
+	tegra_das_power_mode(true);
+
 	return 0;
 }
 
@@ -396,16 +394,11 @@ static void tegra_i2s_shutdown(struct snd_pcm_substream *substream,
 {
 	struct tegra_i2s_info *info = dai->private_data;
 
-	if (info->ref_count > 0)
-	    info->ref_count--;
+	/* set das pins state to tristate */
+	tegra_das_power_mode(false);
 
-	if (!info->ref_count) {
-		clk_disable(info->i2s_clk);
-		clk_disable(info->audio_sync_clk);
-
-		/* set das pins state to tristate */
-		tegra_das_power_mode(false);
-	}
+	clk_disable(info->dap_mclk);
+	clk_disable(info->audio_sync_clk);
 
 	return;
 }
@@ -537,7 +530,6 @@ static int tegra_i2s_driver_probe(struct platform_device *pdev)
 		err = PTR_ERR(info->dap_mclk);
 		goto fail_unmap_mem;
 	}
-	clk_enable(info->dap_mclk);
 
 	info->audio_sync_clk = i2s_get_clock_by_name(
 					info->pdata->audio_sync_clk);

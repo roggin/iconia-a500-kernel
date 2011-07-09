@@ -421,12 +421,6 @@ struct ext_slave_descr *lsm303dlhm_get_slave_descr(void);
 #define get_compass_slave_descr lsm303dlhm_get_slave_descr
 #endif
 
-#ifdef CONFIG_MPU_SENSORS_YAS529	/* Yamaha compass */
-struct ext_slave_descr *yas529_get_slave_descr(void);
-#undef get_compass_slave_descr
-#define get_compass_slave_descr yas529_get_slave_descr
-#endif
-
 #ifdef CONFIG_MPU_SENSORS_HSCDTD002B	/* Alps HSCDTD002B compass */
 struct ext_slave_descr *hscdtd002b_get_slave_descr(void);
 #undef get_compass_slave_descr

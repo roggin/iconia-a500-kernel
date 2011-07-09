@@ -85,6 +85,8 @@ unsigned long tegra_lp0_vec_size;
 unsigned long tegra_grhost_aperture;
 static   bool is_tegra_debug_uart_hsport;
 
+extern void SysRestart(void );
+
 static struct board_info tegra_board_info = {
 	.board_id = -1,
 	.sku = -1,
@@ -245,7 +247,10 @@ static int tegra_pm_flush_console(struct notifier_block *this,
 
 static void tegra_pm_restart(char mode, const char *cmd)
 {
-	arm_machine_restart(mode, cmd);
+	tegra_pm_flush_console(NULL,0,NULL);
+	SysRestart();
+	//arm_machine_restart(mode, cmd);
+
 }
 
 static struct notifier_block tegra_reboot_notifier = {

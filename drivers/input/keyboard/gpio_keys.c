@@ -272,6 +272,23 @@ ATTR_SHOW_FN(disabled_switches, EV_SW, true);
 static DEVICE_ATTR(keys, S_IRUGO, gpio_keys_show_keys, NULL);
 static DEVICE_ATTR(switches, S_IRUGO, gpio_keys_show_switches, NULL);
 
+#ifdef CONFIG_DOCK
+static ssize_t gpio_keys_powerkey(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct platform_device *pdev = to_platform_device(dev);
+	struct gpio_keys_drvdata *ddata = platform_get_drvdata(pdev);
+	struct input_dev *input = ddata->input;
+
+	input_report_key( input, KEY_POWER, 1);
+	input_sync( input );
+	input_report_key( input, KEY_POWER, 0);
+	input_sync( input );
+
+	return 0;
+}
+static DEVICE_ATTR(powerkey, S_IRUGO | S_IWUSR , gpio_keys_powerkey, gpio_keys_powerkey);
+#endif
+
 #define ATTR_STORE_FN(name, type)					\
 static ssize_t gpio_keys_store_##name(struct device *dev,		\
 				      struct device_attribute *attr,	\
@@ -310,6 +327,9 @@ static struct attribute *gpio_keys_attrs[] = {
 	&dev_attr_switches.attr,
 	&dev_attr_disabled_keys.attr,
 	&dev_attr_disabled_switches.attr,
+#ifdef CONFIG_DOCK
+	&dev_attr_powerkey.attr,
+#endif
 	NULL,
 };
 

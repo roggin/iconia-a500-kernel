@@ -298,6 +298,24 @@ void kernel_restart_prepare(char *cmd)
 }
 
 /**
+ *	misc_mcd - write data to misc partition
+ *	@cmd: pointer to buffer containing the data need to be wrote to misc partition
+ */
+void misc_cmd(char *cmd)
+{
+	struct file *fp = filp_open("/dev/block/mmcblk0p5", O_RDWR | O_LARGEFILE, 0);
+	mm_segment_t oldfs;
+	oldfs = get_fs();
+	set_fs(get_ds());
+	if(fp) {
+		pr_emerg("%s: write cmd(%s) to misc\n", __func__, cmd);
+		fp->f_op->write(fp, cmd, strlen(cmd), &fp->f_pos);
+	}
+	set_fs(oldfs);
+	filp_close(fp, 0);
+}
+
+/**
  *	kernel_restart - reboot the system
  *	@cmd: pointer to buffer containing command to execute for restart
  *		or %NULL
@@ -307,6 +325,17 @@ void kernel_restart_prepare(char *cmd)
  */
 void kernel_restart(char *cmd)
 {
+	if(cmd){
+		if (!strncmp(cmd, "recovery", 8)) {
+			misc_cmd("FOTA");
+		}
+#ifdef ENABLE_FASTBOOT_MODE
+		if (!strncmp(cmd, "bootloader", 10)) {
+			misc_cmd("FastbootMode");
+		}
+#endif
+	}
+
 	kernel_restart_prepare(cmd);
 	if (!cmd)
 		printk(KERN_EMERG "Restarting system.\n");

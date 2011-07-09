@@ -28,7 +28,7 @@
 #include <linux/fs.h>
 #include <linux/proc_fs.h>
 #include <linux/memblock.h>
-
+#include <linux/platform_device.h>
 #include <asm/unified.h>
 #include <asm/cpu.h>
 #include <asm/cputype.h>
@@ -436,6 +436,11 @@ static int __init arm_add_memory(unsigned long start, unsigned long size)
 	return 0;
 }
 
+#ifdef CONFIG_ANDROID_RAM_CONSOLE
+extern struct platform_device tegra_ram_console_device;
+#define RAM_CONSOLE_SIZE 0x100000
+#endif
+
 /*
  * Pick out the memory size.  We look for mem=size@start,
  * where start and size are "size[KkMm]"
@@ -460,7 +465,16 @@ static int __init early_mem(char *p)
 	size  = memparse(p, &endp);
 	if (*endp == '@')
 		start = memparse(endp + 1, NULL);
-
+#ifdef CONFIG_ANDROID_RAM_CONSOLE
+#define RAM_CONSOLE_INITED (tegra_ram_console_device.resource[0].end>0)
+	if(!RAM_CONSOLE_INITED){
+		printk("sysmem before steal: start=0x%x size=0x%x\n", (unsigned int)start, (unsigned int)size);
+		tegra_ram_console_device.resource[0].start = start + size - RAM_CONSOLE_SIZE;
+		tegra_ram_console_device.resource[0].end = start + size - 1;
+		size -= RAM_CONSOLE_SIZE; // steal 1M from tail
+		printk("sysmem after steal: start=0x%x size=0x%x\n", (unsigned int)start, (unsigned int)size);
+	}
+#endif
 	arm_add_memory(start, size);
 
 	return 0;

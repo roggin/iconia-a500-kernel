@@ -39,3 +39,5 @@ obj-$(CONFIG_CHARGER_PCF50633)	+= pcf50633-charger.o
 obj-$(CONFIG_BATTERY_JZ4740)	+= jz4740-battery.o
 obj-$(CONFIG_BATTERY_INTEL_MID)	+= intel_mid_battery.o
 obj-$(CONFIG_MAX8907C_CHARGER)	+= max8907c-charger.o
+obj-$(CONFIG_BATTERY_ECBAT)	+= EC_battery.o
+obj-$(CONFIG_LSC_FROM_EC)	+= lsc_from_ec.o

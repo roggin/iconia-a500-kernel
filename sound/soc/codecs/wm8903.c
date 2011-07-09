@@ -58,7 +58,7 @@ static u16 wm8903_reg_defaults[] = {
 	0x0000,     /* R18  - Power Management 6 */
 	0x0000,     /* R19 */
 	0x0400,     /* R20  - Clock Rates 0 */
-	0x0D07,     /* R21  - Clock Rates 1 */
+	0x0C07,     /* R21  - Clock Rates 1 */
 	0x0000,     /* R22  - Clock Rates 2 */
 	0x0000,     /* R23 */
 	0x0050,     /* R24  - Audio Interface 0 */
@@ -233,6 +233,14 @@ struct wm8903_priv {
 
 	struct snd_pcm_substream *master_substream;
 	struct snd_pcm_substream *slave_substream;
+
+	struct work_struct work;
+	int amp_enable;
+	int amp_status;
+	int amp_event;
+
+	int fm2018_enable;
+	int fm2018_status;
 };
 
 static int wm8903_volatile_register(unsigned int reg)
@@ -261,6 +269,11 @@ static int wm8903_run_sequence(struct snd_soc_codec *codec, unsigned int start)
 	reg[0] = snd_soc_read(codec, WM8903_WRITE_SEQUENCER_0);
 	snd_soc_write(codec, WM8903_WRITE_SEQUENCER_0,
 		      reg[0] | WM8903_WSEQ_ENA);
+
+	mdelay(50);
+        snd_soc_write(codec, WM8903_CLOCK_RATES_2,
+                      WM8903_CLK_SYS_ENA);
+	mdelay(50);
 
 	dev_dbg(&i2c->dev, "Starting sequence at %d\n", start);
 
@@ -324,6 +337,7 @@ static int wm8903_output_event(struct snd_soc_dapm_widget *w,
 			       struct snd_kcontrol *kcontrol, int event)
 {
 	struct snd_soc_codec *codec = w->codec;
+	struct wm8903_priv *wm8903 = snd_soc_codec_get_drvdata(codec);
 	u16 val;
 	u16 reg;
 	u16 dcs_reg;
@@ -357,6 +371,16 @@ static int wm8903_output_event(struct snd_soc_dapm_widget *w,
 	}
 
 	if (event & SND_SOC_DAPM_PRE_PMU) {
+		if (w->reg == WM8903_POWER_MANAGEMENT_3 && w->shift == 0) {
+			if (wm8903->amp_event == 1) { /* playback on */
+				if (wm8903->amp_status == 0) {
+					snd_soc_write(codec, WM8903_GPIO_CONTROL_3, 0x10);
+					wm8903->amp_status = 1;
+				}
+			} else {
+				wm8903->amp_enable = 1;
+			}
+		}
 		val = snd_soc_read(codec, reg);
 
 		/* Short the output */
@@ -388,6 +412,16 @@ static int wm8903_output_event(struct snd_soc_dapm_widget *w,
 	}
 
 	if (event & SND_SOC_DAPM_PRE_PMD) {
+		if (w->reg == WM8903_POWER_MANAGEMENT_3 && w->shift == 1) {
+			if (wm8903->amp_event == 1) { /* playback off */
+				if (wm8903->amp_status == 1) {
+					snd_soc_write(codec, WM8903_GPIO_CONTROL_3, 0);
+					wm8903->amp_status = 0;
+				}
+			} else {
+				wm8903->amp_enable = 0;
+			}
+		}
 		val = snd_soc_read(codec, reg);
 
 		/* Short the output */
@@ -950,16 +984,17 @@ static int wm8903_set_bias_level(struct snd_soc_codec *codec,
 
 	case SND_SOC_BIAS_STANDBY:
 		if (codec->bias_level == SND_SOC_BIAS_OFF) {
-			snd_soc_write(codec, WM8903_CLOCK_RATES_2,
-				     WM8903_CLK_SYS_ENA);
+			//snd_soc_write(codec, WM8903_CLOCK_RATES_2,
+			//	     WM8903_CLK_SYS_ENA);
 
 			/* Change DC servo dither level in startup sequence */
 			snd_soc_write(codec, WM8903_WRITE_SEQUENCER_0, 0x11);
 			snd_soc_write(codec, WM8903_WRITE_SEQUENCER_1, 0x1257);
 			snd_soc_write(codec, WM8903_WRITE_SEQUENCER_2, 0x2);
 
+			msleep(100);
 			wm8903_run_sequence(codec, 0);
-			wm8903_sync_reg_cache(codec, codec->reg_cache);
+			//wm8903_sync_reg_cache(codec, codec->reg_cache);
 
 			/* Enable low impedence charge pump output */
 			reg = snd_soc_read(codec,
@@ -978,6 +1013,8 @@ static int wm8903_set_bias_level(struct snd_soc_codec *codec,
 			dev_dbg(&i2c->dev, "Enabling Class W\n");
 			snd_soc_write(codec, WM8903_CLASS_W_0, reg |
 				     WM8903_CP_DYN_FREQ | WM8903_CP_DYN_V);
+
+			wm8903_sync_reg_cache(codec, codec->reg_cache);
 		}
 
 		reg = snd_soc_read(codec, WM8903_VMID_CONTROL_0);
@@ -1224,6 +1261,88 @@ static struct {
 	{ 96000, 10 },
 	{ 0,      0 },
 };
+
+extern int wired_jack_state(void);
+
+static int wm8903_trigger(struct snd_pcm_substream *substream,
+                              int cmd, struct snd_soc_dai *codec_dai)
+{
+	struct snd_soc_pcm_runtime *rtd = substream->private_data;
+	struct snd_soc_device *socdev = rtd->socdev;
+	struct snd_soc_codec *codec = socdev->card->codec;
+	struct wm8903_priv *wm8903 = snd_soc_codec_get_drvdata(codec);
+	int wired_jack;
+
+	switch (cmd) {
+		case SNDRV_PCM_TRIGGER_START:
+		case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
+		case SNDRV_PCM_TRIGGER_RESUME:
+			if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
+				wm8903->amp_event = 1;
+				schedule_work(&wm8903->work);
+				mdelay(100);
+			}
+
+			if (substream->stream == SNDRV_PCM_STREAM_CAPTURE) {
+				wired_jack = wired_jack_state();
+
+				if (wired_jack == 0 || wired_jack == 2) {
+					wm8903->fm2018_enable = 1;
+					schedule_work(&wm8903->work);
+					mdelay(100);
+				}
+			}
+			break;
+		case SNDRV_PCM_TRIGGER_STOP:
+		case SNDRV_PCM_TRIGGER_PAUSE_PUSH:
+		case SNDRV_PCM_TRIGGER_SUSPEND:
+			if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
+				wm8903->amp_event = 0;
+				schedule_work(&wm8903->work);
+			}
+
+			if (substream->stream == SNDRV_PCM_STREAM_CAPTURE) {
+				wm8903->fm2018_enable = 0;
+				schedule_work(&wm8903->work);
+			}
+			break;
+        }
+	return 0;
+}
+
+static void wm8903_amp_fm2018_work(struct work_struct *work)
+{
+	struct wm8903_priv *wm8903 = \
+		container_of(work, struct wm8903_priv, work);
+
+	if (wm8903->amp_event == 1) {
+		if (wm8903->amp_enable == 1) {
+			snd_soc_write(&wm8903->codec, WM8903_GPIO_CONTROL_3, 0x10);
+			wm8903->amp_status = 1;
+			pr_info("Speaker Enable !\n");
+		}
+	} else {
+		if (wm8903->amp_status == 1) {
+			snd_soc_write(&wm8903->codec, WM8903_GPIO_CONTROL_3, 0);
+			wm8903->amp_status = 0;
+			pr_info("Speaker Disable !\n");
+		}
+	}
+
+	if (wm8903->fm2018_enable == 1) {
+		if (wm8903->fm2018_status == 0) {
+			snd_soc_write(&wm8903->codec, WM8903_GPIO_CONTROL_2, 0x10);
+			wm8903->fm2018_status = 1;
+			printk("Enable FM2018 !!\n");
+		}
+	} else 	if (wm8903->fm2018_enable == 0) {
+		if (wm8903->fm2018_status == 1) {
+			snd_soc_write(&wm8903->codec, WM8903_GPIO_CONTROL_2, 0x0);
+			wm8903->fm2018_status = 0;
+			printk("Disable FM2018 !!\n");
+		}
+	}
+}
 
 static int wm8903_startup(struct snd_pcm_substream *substream,
 			  struct snd_soc_dai *dai)
@@ -1585,6 +1704,7 @@ static struct snd_soc_dai_ops wm8903_dai_ops = {
 	.digital_mute	= wm8903_digital_mute,
 	.set_fmt	= wm8903_set_dai_fmt,
 	.set_sysclk	= wm8903_set_dai_sysclk,
+	.trigger	= wm8903_trigger,
 };
 
 struct snd_soc_dai wm8903_dai = {
@@ -1764,13 +1884,13 @@ static __devinit int wm8903_i2c_probe(struct i2c_client *i2c,
 
 	val = snd_soc_read(codec, WM8903_ANALOGUE_OUT1_LEFT);
 	val |= WM8903_HPOUTVU;
-	snd_soc_write(codec, WM8903_ANALOGUE_OUT1_LEFT, val);
-	snd_soc_write(codec, WM8903_ANALOGUE_OUT1_RIGHT, val);
+	snd_soc_write(codec, WM8903_ANALOGUE_OUT1_LEFT, 0xB8);
+	snd_soc_write(codec, WM8903_ANALOGUE_OUT1_RIGHT, 0xB8);
 
 	val = snd_soc_read(codec, WM8903_ANALOGUE_OUT2_LEFT);
 	val |= WM8903_LINEOUTVU;
-	snd_soc_write(codec, WM8903_ANALOGUE_OUT2_LEFT, val);
-	snd_soc_write(codec, WM8903_ANALOGUE_OUT2_RIGHT, val);
+	snd_soc_write(codec, WM8903_ANALOGUE_OUT2_LEFT, 0xB7);
+	snd_soc_write(codec, WM8903_ANALOGUE_OUT2_RIGHT, 0xB7);
 
 	val = snd_soc_read(codec, WM8903_ANALOGUE_OUT3_LEFT);
 	val |= WM8903_SPKVU;
@@ -1796,6 +1916,20 @@ static __devinit int wm8903_i2c_probe(struct i2c_client *i2c,
 		dev_err(&i2c->dev, "Failed to register DAI: %d\n", ret);
 		goto err_codec;
 	}
+
+	INIT_WORK(&wm8903->work, wm8903_amp_fm2018_work);
+	wm8903->amp_enable = 0;
+	wm8903->amp_status = 0;
+	wm8903->amp_event  = 0;
+
+	wm8903->fm2018_enable = 0;
+	wm8903->fm2018_status = 0;
+
+	snd_soc_write(codec, WM8903_GPIO_CONTROL_3, 0);
+	snd_soc_read(codec, WM8903_GPIO_CONTROL_3);
+	snd_soc_write(codec, WM8903_GPIO_CONTROL_2, 0x0);// for power saving
+	snd_soc_read(codec, WM8903_GPIO_CONTROL_2);
+	snd_soc_write(codec, WM8903_MIC_BIAS_CONTROL_0, 0x00);
 
 	return ret;
 

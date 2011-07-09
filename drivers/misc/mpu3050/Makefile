@@ -1,7 +1,7 @@
 
 # Kernel makefile for motions sensors
 #
-#
+# 
 
 # MPU
 obj-$(CONFIG_MPU_SENSORS_MPU3050)	+= mpu3050.o
@@ -123,6 +123,6 @@ endif
 obj-$(CONFIG_MPU_SENSORS_TIMERIRQ)+= timerirq.o
 
 ifdef CONFIG_MPU_SENSORS_DEBUG
-EXTRA_CFLAGS += -DDEBUG
+EXTRA_CFLAGS += -DDEBUG 
 endif
 

@@ -58,6 +58,22 @@
 
 #define MPU3050_EARLY_SUSPEND_IN_DRIVER 0
 
+#define COMPASS_AKM8975_SENSOR_ID  0x48
+#define COMPASS_YAS529_SENSOR_ID   0x40
+#define COMPASS_SLAVE_ID           0x0C
+
+#define COMPASS_ADAPTER_NUMBER  4
+#define COMPASS_RETRY_CNT       3
+
+int compass_retry_num = 0;
+signed char YAS529_orientation[9] = {
+	 0, -1,  0,
+	-1,  0,  0,
+	 0,  0, -1
+};
+
+extern struct ext_slave_descr *yas529_get_slave_descr(void);
+
 /* Platform data for the MPU */
 struct mpu_private_data {
 	struct mldl_cfg mldl_cfg;
@@ -996,6 +1012,104 @@ static struct miscdevice i2c_mpu_device = {
 	.fops = &mpu_fops,
 };
 
+static int AKM_i2c_rxdata(struct i2c_adapter *i2c_adap, unsigned short saddr, unsigned char *rxdata, int length)
+{
+	struct i2c_msg msgs[] = {
+		{
+			.addr  = saddr,
+			.flags = 0,
+			.len   = 1,
+			.buf   = rxdata,
+		},
+		{
+			.addr  = saddr,
+			.flags = I2C_M_RD,
+			.len   = length,
+			.buf   = rxdata,
+		},
+	};
+
+	if (i2c_transfer(i2c_adap, &msgs[0], 1) < 0) {
+		pr_err("failed, write slave address failed\n");
+		return -EIO;
+	}
+
+	if (i2c_transfer(i2c_adap, &msgs[1], 1) < 0) {
+		pr_err("failed, read data failed\n");
+		return -EIO;
+	}
+
+	return 0;
+}
+
+
+static int32_t AKM_i2c_read_byte(struct i2c_adapter *i2c_adap, unsigned short saddr, unsigned char raddr, unsigned char *rdata)
+{
+	int32_t rc = 0;
+	unsigned char buf[2];
+
+	if (!rdata) {
+		pr_err("buffer is NULL\n");
+		return -EIO;
+	}
+
+	memset(buf, 0, sizeof(buf));
+	buf[0] = raddr;
+
+	rc = AKM_i2c_rxdata(i2c_adap, saddr, buf, 1);
+	if (rc) {
+		pr_err("failed, raddr = 0x%02x\n", raddr);
+		return -EIO;
+	}
+	*rdata = buf[0];
+
+	return rc;
+}
+
+static int mpu_sensor_i2c_write(struct i2c_adapter *i2c_adap,
+				   unsigned char address,
+				   unsigned int len, unsigned char *data)
+{
+	struct i2c_msg msgs[1];
+	int res;
+
+	if (NULL == data || NULL == i2c_adap)
+		return -EINVAL;
+
+	msgs[0].addr = address;
+	msgs[0].flags = 0;	/* write */
+	msgs[0].buf = (unsigned char *) data;
+	msgs[0].len = len;
+
+	res = i2c_transfer(i2c_adap, msgs, 1);
+	if (res < 1)
+		return res;
+	else
+		return 0;
+}
+
+static int mpu_sensor_i2c_read(struct i2c_adapter *i2c_adap,
+				  unsigned char address,
+				  unsigned char reg,
+				  unsigned int len, unsigned char *data)
+{
+	struct i2c_msg msgs[2];
+	int res;
+
+	if (NULL == data || NULL == i2c_adap)
+		return -EINVAL;
+
+	msgs[0].addr = address;
+	msgs[0].flags = I2C_M_RD;
+	msgs[0].buf = data;
+	msgs[0].len = len;
+
+	res = i2c_transfer(i2c_adap, msgs, 1);
+	if (res < 1)
+		return res;
+	else
+		return 0;
+}
 
 int mpu3050_probe(struct i2c_client *client,
 		  const struct i2c_device_id *devid)
@@ -1007,6 +1121,13 @@ int mpu3050_probe(struct i2c_client *client,
 	struct i2c_adapter *accel_adapter = NULL;
 	struct i2c_adapter *compass_adapter = NULL;
 	struct i2c_adapter *pressure_adapter = NULL;
+
+	int i = 0;
+	int compass_res = 0;
+	unsigned char compass_rdata;
+	unsigned char rawData[2];
+	unsigned char dummyData[1] = { 0 };
+	struct i2c_adapter *compass_yamaha_adapter = i2c_get_adapter(COMPASS_ADAPTER_NUMBER);
 
 	dev_dbg(&client->adapter->dev, "%s\n", __func__);
 
@@ -1037,6 +1158,63 @@ int mpu3050_probe(struct i2c_client *client,
 		pdata->compass.get_slave_descr = get_compass_slave_descr;
 		pdata->pressure.get_slave_descr = get_pressure_slave_descr;
 #endif
+
+		/* Read AKM8975 sensor ID */
+		compass_res = AKM_i2c_read_byte(compass_yamaha_adapter, COMPASS_SLAVE_ID, 0, &compass_rdata);
+		if (compass_res) {
+			for (compass_retry_num = 0; compass_retry_num<COMPASS_RETRY_CNT; compass_retry_num++) {
+				compass_res = AKM_i2c_read_byte(compass_yamaha_adapter, COMPASS_SLAVE_ID, 0, &compass_rdata);
+				if (compass_res == 0)
+					break;
+				else
+					pr_err("compass read AKM8975 sensor id error, retry(%d)\n", compass_retry_num);
+			}
+		}
+
+		/* Check AKM8975 sensor ID */
+		if (compass_rdata != COMPASS_AKM8975_SENSOR_ID) {
+
+			/* YAS529 Change register(Config Register) to read mode */
+			dummyData[0] = 0xC0 | 0x10;
+			compass_res = mpu_sensor_i2c_write(compass_yamaha_adapter, 0x2E, 1, dummyData);
+			if (compass_res) {
+				for (compass_retry_num = 0; compass_retry_num < COMPASS_RETRY_CNT; compass_retry_num++) {
+						compass_res = mpu_sensor_i2c_write(compass_yamaha_adapter, 0x2E, 1, dummyData);
+					if (compass_res == 0)
+						break;
+					else
+						pr_err("set YAS529 config register error, retry(%d)\n", compass_retry_num);
+				}
+				if (compass_retry_num == COMPASS_RETRY_CNT)
+					goto out_alloc_data_failed;
+			}
+
+			/* Read YAS529 Sensor ID */
+			compass_res = mpu_sensor_i2c_read(compass_yamaha_adapter,  0x2E, 4, 2, (unsigned char *) &rawData);
+			if (compass_res) {
+				for (compass_retry_num = 0; compass_retry_num < COMPASS_RETRY_CNT; compass_retry_num++) {
+					compass_res = mpu_sensor_i2c_read(compass_yamaha_adapter,  0x2E, 4, 2, (unsigned char *) &rawData);
+					if (compass_res == 0)
+						break;
+					else
+						pr_err("compass read YAS592 sensor id error, retry(%d)\n", compass_retry_num);
+				}
+				if (compass_retry_num == COMPASS_RETRY_CNT)
+					goto out_alloc_data_failed;
+			}
+
+			if (rawData[1] == COMPASS_YAS529_SENSOR_ID) {
+				pdata->compass.get_slave_descr = yas529_get_slave_descr;
+				pdata->compass.address = 0x2E;
+
+				for (i = 0; i < 9; i++)
+					pdata->compass.orientation[i] = YAS529_orientation[i];
+
+				pr_info("compass sensor is YAS529 0x%02x\n",rawData[1]);
+			}
+		}
+		else
+			pr_info("compass sensor is AKM8975 0x%02x\n",compass_rdata);
 
 		if (pdata->accel.get_slave_descr) {
 			mldl_cfg->accel =

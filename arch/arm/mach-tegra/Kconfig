@@ -37,6 +37,11 @@ config MACH_WHISTLER
        help
          Support for NVIDIA Whistler development platform
 
+config MACH_ACER_PICASSO
+       bool "Acer Picasso"
+       help
+         Support for Acer Picasso
+
 choice
         prompt "Low-level debug console UART"
         default TEGRA_DEBUG_UART_NONE

@@ -453,7 +453,7 @@ static int kxtf9_init(void *mlsl_handle,
 	ERROR_CHECK(result);
 
 	result = kxtf9_set_odr(mlsl_handle, pdata, &private_data->suspend,
-			FALSE, 50000);
+			FALSE, 0);
 	ERROR_CHECK(result);
 	result = kxtf9_set_odr(mlsl_handle, pdata, &private_data->resume,
 			FALSE, 200000);

@@ -48,6 +48,8 @@ static struct clk *csus_clk;
 static struct clk *csi_clk;
 static struct regulator *tegra_camera_regulator_csi;
 
+static int camera_opened = 0;
+
 static int tegra_camera_enable_isp(void)
 {
 	return clk_enable(isp_clk);
@@ -79,20 +81,34 @@ static int tegra_camera_enable_csi(void)
 {
 	int ret;
 
-	ret = regulator_enable(tegra_camera_regulator_csi);
-	if (ret)
-		return ret;
+	if (!camera_opened) {
+		camera_opened = 1;
+		ret = regulator_set_voltage(tegra_camera_regulator_csi, 1800*1000, 1800*1000);
+		if (ret){
+	               	pr_err("%s: Failed to set ldo6 to 1.8v\n", __func__);
+			return ret;
+		}
+
+		ret = regulator_enable(tegra_camera_regulator_csi);
+		if (ret) {
+			pr_err("%s: regulator_enable failed\n", __func__);
+			return ret;
+		}
+	}
 	clk_enable(csi_clk);
 	return 0;
 }
 
 static int tegra_camera_disable_csi(void)
 {
+	//TODO:remove this workaround of camera/camcorder switch hang issue
+	/*
 	int ret;
 
 	ret = regulator_disable(tegra_camera_regulator_csi);
 	if (ret)
 		return ret;
+	*/
 	clk_disable(csi_clk);
 	return 0;
 }
@@ -347,10 +363,45 @@ static int tegra_camera_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static int tegra_camera_suspend(struct platform_device *pdev, pm_message_t state)
+{
+	int ret;
+
+	pr_info("%s\n", __func__);
+	if (camera_opened) {
+		ret = regulator_disable(tegra_camera_regulator_csi);
+		if (ret) {
+			pr_err("%s: regulator_disable failed\n", __func__);
+			return ret;
+		}
+	}
+
+	return 0;
+}
+
+static int tegra_camera_resume(struct platform_device *pdev)
+{
+	int ret;
+
+	pr_info("%s\n", __func__);
+	if (camera_opened) {
+		ret = regulator_enable(tegra_camera_regulator_csi);
+		if (ret) {
+			pr_err("%s: regulator_enable failed\n", __func__);
+			return ret;
+		}
+	}
+
+	return 0;
+}
+
+
 static struct platform_driver tegra_camera_driver = {
 	.probe = tegra_camera_probe,
 	.remove = tegra_camera_remove,
-	.driver = { .name = TEGRA_CAMERA_NAME }
+	.driver = { .name = TEGRA_CAMERA_NAME },
+	.suspend = tegra_camera_suspend,
+	.resume = tegra_camera_resume,
 };
 
 static int __init tegra_camera_init(void)
@@ -361,6 +412,22 @@ static int __init tegra_camera_init(void)
 static void __exit tegra_camera_exit(void)
 {
 	platform_driver_unregister(&tegra_camera_driver);
+}
+
+int tegra_camera_enable_csi_power(void)
+{
+	tegra_camera_enable_csi();
+	tegra_camera_enable_isp();
+	tegra_camera_enable_vi();
+	return 0;
+}
+
+int tegra_camera_disable_csi_power(void)
+{
+	tegra_camera_disable_vi();
+	tegra_camera_disable_isp();
+	tegra_camera_disable_csi();
+	return 0;
 }
 
 module_init(tegra_camera_init);

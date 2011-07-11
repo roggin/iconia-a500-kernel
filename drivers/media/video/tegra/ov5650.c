@@ -36,6 +36,9 @@ struct ov5650_info {
 #define OV5650_TABLE_END 1
 #define OV5650_MAX_RETRIES 3
 
+extern int tegra_camera_enable_csi_power(void);
+extern int tegra_camera_disable_csi_power(void);
+
 static struct ov5650_reg tp_none_seq[] = {
 	{0x5046, 0x00}, /* isp_off */
 	{OV5650_TABLE_END, 0x0000}
@@ -115,7 +118,7 @@ static struct ov5650_reg mode_start[] = {
 	{0x300f, 0x8f}, /* PLL control00 R_SELD5 [7:6] div by 4 R_DIVL [2]
 			   two lane div 1 SELD2P5 [1:0] div 2.5 pg 99 */
 	{0x3010, 0x10}, /* PLL control01 DIVM [3:0] DIVS [7:4] div 1 pg 99 */
-	{0x3011, 0x14}, /* PLL control02 R_DIVP [5:0] div 20 pg 99 */
+	{0x3011, 0x18}, /* PLL control02 R_DIVP [5:0] div 24 pg 99 */
 	{0x3012, 0x02}, /* PLL CTR 03, default */
 	{0x3815, 0x82}, /* PCLK to SCLK ratio bit[4:0] is set to 2 pg 81 */
 	{0x3503, 0x33}, /* AEC auto AGC auto gain has no latch delay. pg 38 */
@@ -287,7 +290,7 @@ static struct ov5650_reg mode_2080x1164[] = {
 
 	{0x300f, 0x8f}, // PLL control00 R_SELD5 [7:6] div by 4 R_DIVL [2] two lane div 1 SELD2P5 [1:0] div 2.5 pg 99
 	{0x3010, 0x10}, // PLL control01 DIVM [3:0] DIVS [7:4] div 1 pg 99
-	{0x3011, 0x14}, // PLL control02 R_DIVP [5:0] div 20 pg 99
+	{0x3011, 0x18}, // PLL control02 R_DIVP [5:0] div 24 pg 99
 	{0x3012, 0x02}, // PLL CTR 03, default
 	{0x3503, 0x33}, // AEC auto AGC auto gain has delay of 2 frames. pg 38
 
@@ -717,6 +720,8 @@ static int ov5650_probe(struct i2c_client *client,
 			const struct i2c_device_id *id)
 {
 	int err;
+	int device_check_ret, retry = 0;
+	u8 read_val = 0;
 
 	pr_info("ov5650: probing sensor.\n");
 
@@ -726,15 +731,36 @@ static int ov5650_probe(struct i2c_client *client,
 		return -ENOMEM;
 	}
 
+	info->pdata = client->dev.platform_data;
+	info->i2c_client = client;
+
+	tegra_camera_enable_csi_power();
+	if (info->pdata && info->pdata->power_on)
+		info->pdata->power_on();
+
+	do {
+		device_check_ret = ov5650_read_reg(client, 0x300A, &read_val);
+		if (device_check_ret == 0)
+			break;
+		retry++;
+	} while (retry < OV5650_MAX_RETRIES);
+
+	if (info->pdata && info->pdata->power_off)
+		info->pdata->power_off();
+	tegra_camera_disable_csi_power();
+
+	if (device_check_ret != 0) {
+		pr_err("ov5650 cannot read chip_id\n");
+		kfree(info);
+		return device_check_ret;
+	}
+
 	err = misc_register(&ov5650_device);
 	if (err) {
 		pr_err("ov5650: Unable to register misc device!\n");
 		kfree(info);
 		return err;
 	}
-
-	info->pdata = client->dev.platform_data;
-	info->i2c_client = client;
 
 	i2c_set_clientdata(client, info);
 	return 0;
